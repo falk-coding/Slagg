@@ -1,0 +1,21 @@
+Slagg (Falk Instruments) – installation på Mac
+==============================================
+
+1. Dubbelklicka på "Installera.command".
+   Första gången säger macOS att den inte kan öppnas → högerklicka på filen → Öppna → Öppna.
+   (Eller: Systeminställningar → Integritet och säkerhet → "Öppna ändå".)
+2. Starta om din DAW. Slagg finns under Instruments → Falk Instruments → Slagg.
+
+Manuellt: kopiera Slagg.vst3 till ~/Library/Audio/Plug-Ins/VST3/ och Slagg.component till
+~/Library/Audio/Plug-Ins/Components/, kör sedan i Terminal:
+   xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/Slagg.vst3 ~/Library/Audio/Plug-Ins/Components/Slagg.component
+
+Snabbt igång:
+- Tryck Play i DAW:n – Slagg följer DAW:ns tempo och spelar mönstret i rutnätet.
+- Klicka i rutnätet = slag på/av. Dra upp/ner på ett slag = velocity.
+- Klicka på ett ljuds rubrik för att provlyssna. Dubbelklick på en ratt = standardvärde.
+- ⇢ på varje rad: dra ljudet till ett eget MIDI-spår. "Dra alla till DAW": ett spår per ljud.
+  Längden tas från DAW:ns markörer (eller Från/Till). Sekvensern slutar sedan spela de ljuden.
+- Out = Own skickar ljudet till sin egen utgång (för separata mixerkanaler).
+- MIDI in: C1 Kick, C#1 Rim, D1 Snare, D#1 Clap, F1 Tom low, F#1 Closed hat, A1 Tom mid,
+  A#1 Open hat, C2 Tom high, C#2 Cymbal (GM-trumnoter).
