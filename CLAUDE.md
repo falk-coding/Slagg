@@ -36,7 +36,7 @@ polymeter, velocity, avstängt ljud efter dragning), spara/ladda (även pluginva
 pluginval/auval körs bara i CI.
 
 ## Release
-Push till main → `.github/workflows/build.yml`: Linux (tester + pluginval), macOS (`macos-26`, universal, ad hoc-signerat,
+Push till main → `.github/workflows/build.yml`: Linux (tester + pluginval), macOS (`macos-15`; `macos-26` köade utan runner nov 2026, universal, ad hoc-signerat,
 pluginval + auval) och Windows (pluginval). Release: `actions_run_trigger` → `run_workflow`, `build.yml`, ref `main`,
 inputs `{"release_tag": "vX.Y.Z"}`; kolla `get_release_by_tag` att `Slagg-mac.zip` och `Slagg-windows.zip` finns.
 Höj `project(... VERSION x.y.z)`. Byter man macOS-runner: byt även cache-nyckeln.

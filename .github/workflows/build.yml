@@ -68,8 +68,8 @@ jobs:
 
   macos:
     name: macOS – VST3 och AU
-    # macos-14 pensioneras 2026-11-02, macos-15 hade lång kö vid flytten – macos-26 bygger samma universal-binär.
-    runs-on: macos-26
+    # macos-26 fick ingen runner (köade 15 min och avbröts, nov 2026) – macos-15 bygger samma universal-binär.
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
@@ -77,7 +77,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/_deps
-          key: juce-macos26-${{ hashFiles('CMakeLists.txt') }}   # byt nyckel när runner-avbilden byts (sökvägar till Xcode sparas i cachen)
+          key: juce-macos15-${{ hashFiles('CMakeLists.txt') }}   # byt nyckel när runner-avbilden byts (sökvägar till Xcode sparas i cachen)
 
       - name: "Bygg (universal: Apple Silicon + Intel)"
         run: |
