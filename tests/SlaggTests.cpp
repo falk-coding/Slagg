@@ -321,6 +321,215 @@ void testSequencer()
     std::cout << "  uppspelning = export, polymeter, velocity, spårnamn ok" << std::endl;
 }
 
+void testGroove()
+{
+    std::cout << "Groove (probability, ratchet, nudge, humanize):" << std::endl;
+    seq::Pattern pat;
+    pat.clear();
+    seq::Settings st;
+
+    // 66 % sannolikhet över 4000 steg: ska hamna nära 66 %.
+    pat.setVoiceFromString (dsp::closedHat, "x?66");
+    st.length[(size_t) dsp::closedHat] = 1;
+    std::vector<seq::Hit> a, b;
+    seq::generate (pat, st, 0.0, 1000.0, 1u << dsp::closedHat, a);
+    const double ratio = (double) a.size() / 4000.0;
+    check (ratio > 0.62 && ratio < 0.70, "probability 66 % gav " + juce::String (ratio * 100.0, 1) + " %");
+
+    // Deterministiskt: samma område två gånger = samma slag. Uppdelat i block = samma som i ett svep.
+    seq::generate (pat, st, 0.0, 1000.0, 1u << dsp::closedHat, b);
+    check (a.size() == b.size(), "probability är inte deterministisk");
+    std::vector<seq::Hit> pieces;
+    for (double t = 0.0; t < 1000.0; t += 0.37)
+        seq::generate (pat, st, t, std::min (1000.0, t + 0.37), 1u << dsp::closedHat, pieces);
+    check (pieces.size() == a.size(), "probability skiljer sig när det genereras i block");
+
+    // Reroll = nytt frö = annat utfall.
+    pat.seed = 777;
+    std::vector<seq::Hit> c;
+    seq::generate (pat, st, 0.0, 1000.0, 1u << dsp::closedHat, c);
+    bool differs = c.size() != a.size();
+    for (size_t i = 0; ! differs && i < c.size(); ++i)
+        differs = std::abs (c[i].ppq - a[i].ppq) > 1e-9;
+    check (differs, "nytt frö ger samma slumputfall");
+
+    // Ratchet 3: tre slag inom steget, avtagande styrka.
+    pat.clear();
+    pat.setVoiceFromString (dsp::snare, "X*3 . . .");
+    st.length[(size_t) dsp::snare] = 4;
+    std::vector<seq::Hit> r;
+    seq::generate (pat, st, 0.0, 1.0, 1u << dsp::snare, r);
+    check (r.size() == 3 && std::abs (r[1].ppq - 0.25 / 3.0) < 1e-9 && r[1].velocity < r[0].velocity, "ratchet 3 fungerar inte");
+
+    // Nudge +20 %: slaget kommer 0,2 steg senare.
+    pat.clear();
+    pat.setVoiceFromString (dsp::rim, ". X>20 . .");
+    st.length[(size_t) dsp::rim] = 4;
+    std::vector<seq::Hit> n;
+    seq::generate (pat, st, 0.0, 1.0, 1u << dsp::rim, n);
+    check (n.size() == 1 && std::abs (n[0].ppq - (0.25 + 0.05)) < 1e-9, "nudge flyttar inte slaget rätt");
+
+    // Nudge bakåt över en blockgräns: slaget får bara komma en gång.
+    pat.setVoiceFromString (dsp::rim, "X<30 . . .");
+    std::vector<seq::Hit> m;
+    for (double t = -1.0; t < 4.0; t += 0.1)
+        seq::generate (pat, st, t, t + 0.1, 1u << dsp::rim, m);
+    check (m.size() == 5, "nudge bakåt dubblerar eller tappar slag (" + juce::String ((int) m.size()) + ")");
+
+    // Humanize ändrar tid och styrka, men inte antalet slag.
+    pat.setVoiceFromString (dsp::rim, "X X X X");
+    st.humanize = 1.0f;
+    std::vector<seq::Hit> h;
+    seq::generate (pat, st, 0.0, 4.0, 1u << dsp::rim, h);
+    bool moved = false, velVaries = false;
+    for (const auto& x : h)
+    {
+        const double rel = x.ppq / 0.25;
+        moved = moved || std::abs (rel - std::round (rel)) > 1e-6;
+        velVaries = velVaries || std::abs (x.velocity - 1.0f) > 1e-3f;
+    }
+    // Slagen vid kanterna (0 och 4) kan glida in i eller ut ur fönstret – därför 15–17.
+    check (h.size() >= 15 && h.size() <= 17 && moved && velVaries,
+           "humanize gör inget (" + juce::String ((int) h.size()) + " slag)");
+
+    // Sparat mönster behåller probability/ratchet/nudge/frö; gammalt mönster (v0.1) får standardvärden.
+    pat.clear();
+    pat.setVoiceFromString (dsp::tomLow, "x?40*2>10");
+    pat.seed = 4242;
+    seq::Pattern back;
+    back.fromTree (pat.toTree());
+    const auto lo = (size_t) dsp::tomLow;
+    check (std::abs (back.probability[lo][0].load() - 0.4f) < 0.01f && back.ratchet[lo][0].load() == 2
+               && std::abs (back.nudge[lo][0].load() - 0.1f) < 0.01f && back.seed.load() == 4242u,
+           "probability/ratchet/nudge/frö sparas inte");
+    auto old = pat.toTree();
+    for (int i = 0; i < old.getNumChildren(); ++i)
+        for (auto* key : { "prob", "rat", "nudge" })
+            old.getChild (i).removeProperty (key, nullptr);
+    back.fromTree (old);
+    check (back.probability[lo][0].load() > 0.99f && back.ratchet[lo][0].load() == 1, "gammalt mönster får fel standardvärden");
+    std::cout << "  probability " << juce::String (ratio * 100.0, 1) << " % (66 %), ratchet, nudge, humanize, sparning ok" << std::endl;
+}
+
+// Spelar med transport och returnerar topp, rms och slag per ljud.
+struct TransportResult { float peak = 0; double rms = 0; bool finite = true; std::array<uint32_t, dsp::numVoices> hits {}; double end = 0; };
+TransportResult runTransport (SlaggProcessor& p, double bars, double bpm, juce::AudioBuffer<float>* capture = nullptr)
+{
+    PlayHead ph;
+    ph.bpm = bpm;
+    const double sr = 48000.0;
+    const int block = 512;
+    p.setPlayHead (&ph);
+    p.setRateAndBufferSizeDetails (sr, block);
+    p.prepareToPlay (sr, block);
+    juce::AudioBuffer<float> buf (p.getTotalNumOutputChannels(), block);
+    juce::MidiBuffer midi;
+    std::array<uint32_t, dsp::numVoices> before {};
+    for (int v = 0; v < dsp::numVoices; ++v) before[(size_t) v] = p.getHitCounter (v);
+    const double pps = bpm / 60.0 / sr;
+    const int total = (int) std::ceil (bars * 4.0 / pps / block) * block;
+    if (capture != nullptr) capture->setSize (2, total);
+    TransportResult r;
+    double sum = 0;
+    ph.playing = true;
+    for (int pos = 0; pos < total; pos += block)
+    {
+        ph.ppq = pos * pps;
+        midi.clear();
+        p.processBlock (buf, midi);
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            for (int i = 0; i < block; ++i)
+            {
+                const float x = buf.getSample (ch, i);
+                r.finite = r.finite && std::isfinite (x);
+                r.peak = std::max (r.peak, std::abs (x));
+                sum += x * x;
+            }
+            if (capture != nullptr) capture->copyFrom (ch, pos, buf, ch, 0, block);
+        }
+    }
+    r.rms = std::sqrt (sum / (2.0 * total));
+    r.end = total * pps;
+    for (int v = 0; v < dsp::numVoices; ++v) r.hits[(size_t) v] = p.getHitCounter (v) - before[(size_t) v];
+    p.setPlayHead (nullptr);
+    return r;
+}
+
+void testKits (const juce::File& wavDir)
+{
+    std::cout << "Kit:" << std::endl;
+    auto p = makeProc();
+    for (int k = 0; k < p->getNumPrograms(); ++k)
+    {
+        p->setCurrentProgram (k);
+        const auto name = p->getProgramName (k);
+        juce::AudioBuffer<float> cap;
+        const auto r = runTransport (*p, 8.0, 130.0, wavDir.exists() ? &cap : nullptr);
+        std::cout << "  " << juce::String (k + 1).paddedLeft ('0', 2) << " " << name.paddedRight (' ', 18)
+                  << " peak " << juce::String (r.peak, 3) << "  rms " << juce::String (r.rms, 4) << std::endl;
+        check (r.finite, name + ": NaN/Inf");
+        check (r.peak <= 0.98f, name + ": klipper");
+        check (r.rms > 0.01, name + ": för tyst");
+        check (r.peak < 0.97f, name + ": går för hårt in i begränsaren (topp " + juce::String (r.peak, 3) + ")");
+
+        // Exporten av samma område ska ha exakt lika många slag per ljud – även med probability/ratchet/humanize.
+        const auto file = p->writeMidiExport (0.0, r.end, 0xFFFFFFFFu, "test-kit.mid");
+        juce::FileInputStream in (file);
+        juce::MidiFile mf;
+        check (in.openedOk() && mf.readFrom (in), name + ": exporten kan inte läsas");
+        int track = 1;
+        for (int v = 0; v < dsp::numVoices; ++v)
+        {
+            if (r.hits[(size_t) v] == 0)
+                continue;
+            const int exported = countNotes (mf, track++);
+            check ((int) r.hits[(size_t) v] == exported, name + " / " + voiceInfo[(size_t) v].shortName + ": spelade "
+                       + juce::String ((int) r.hits[(size_t) v]) + ", exporten har " + juce::String (exported));
+        }
+        if (wavDir.exists())
+            writeWav (wavDir.getChildFile ("kit " + juce::String (k + 1).paddedLeft ('0', 2) + " " + name + ".wav"), cap, 48000.0);
+    }
+    check (p->getNumPrograms() >= 12, "för få kit");
+
+    // Kit behåller användarens utgångsval.
+    setParam (*p, pid::id (dsp::kick, pid::sOut), 1.0f);
+    p->setCurrentProgram (1);
+    check (p->apvts.getRawParameterValue (pid::id (dsp::kick, pid::sOut))->load() > 0.5f, "kit nollställer utgångsvalet");
+}
+
+void testRumble()
+{
+    std::cout << "Muller (rumble):" << std::endl;
+    // Bara kick, fyra på golvet. Energi under 250 Hz i andra halvan av varje taktslag (mellan kickarna).
+    auto measure = [] (float amount)
+    {
+        auto p = makeProc();
+        p->getPattern().clear();
+        p->getPattern().setVoiceFromString (dsp::kick, "X . . .");
+        setParam (*p, pid::id (dsp::kick, pid::sLen), 4.0f);
+        setParam (*p, pid::id (dsp::kick, pid::sDecay), 0.2f);
+        setParam (*p, pid::rumbleAmt, amount);
+        juce::AudioBuffer<float> cap;
+        const auto r = runTransport (*p, 4.0, 120.0, &cap);
+        // 120 BPM, 48 kHz: ett taktslag = 24000 sampel. Mät 2:a halvan av slag 4–16.
+        double between = 0;
+        for (int beat = 3; beat < 16; ++beat)
+            for (int i = 0; i < 12000; ++i)
+            {
+                const float x = cap.getSample (0, beat * 24000 + 12000 + i);
+                between += x * x;
+            }
+        return std::make_tuple (between, r.peak, r.finite);
+    };
+    const auto [offE, offPeak, offFinite] = measure (0.0f);
+    const auto [onE, onPeak, onFinite] = measure (0.8f);
+    std::cout << "  energi mellan kickarna: av " << juce::String (offE, 4) << ", på " << juce::String (onE, 4) << std::endl;
+    check (onFinite && offFinite, "mullret ger NaN/Inf");
+    check (onE > offE * 20.0 + 1.0, "mullret hörs inte mellan kickarna");
+    check (onPeak <= 0.98f, "mullret klipper");
+}
+
 void testState()
 {
     std::cout << "Spara/ladda:" << std::endl;
@@ -364,6 +573,16 @@ void screenshot (const juce::File& file)
     juce::PNGImageFormat png;
     check (out.openedOk() && png.writeImageToStream (img, out), "kunde inte spara skärmdump");
     std::cout << "Skärmdump: " << file.getFullPathName() << " (" << img.getWidth() << "x" << img.getHeight() << ")" << std::endl;
+
+    // Ett groove-kit: probability-prickar, ratchet-streck och nudge syns i rutnätet.
+    p->setCurrentProgram (6);
+    if (auto* e = dynamic_cast<SlaggEditor*> (ed.get()))
+        e->refreshNow();
+    const auto img2 = ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f);
+    const auto file2 = file.getSiblingFile (file.getFileNameWithoutExtension() + "-kit.png");
+    file2.deleteFile();
+    juce::FileOutputStream out2 (file2);
+    check (out2.openedOk() && png.writeImageToStream (img2, out2), "kunde inte spara skärmdump 2");
 }
 } // namespace
 
@@ -383,6 +602,9 @@ int main (int argc, char** argv)
     testVoices (wavDir);
     testOutputs();
     testSequencer();
+    testGroove();
+    testKits (wavDir);
+    testRumble();
     testState();
     if (shot != juce::File())
         screenshot (shot);

@@ -43,7 +43,11 @@ private:
     bool dragging = false;
 };
 
-// Rutnätet: ett spår per ljud, 32 steg. Klick = på/av, dra upp/ner på ett slag = velocity.
+// Vad man redigerar när man drar på ett slag i rutnätet.
+enum class EditMode { velocity = 0, probability, ratchet, nudge };
+
+// Rutnätet: ett spår per ljud, 32 steg. Klick = på/av, dra på ett slag = värdet i valt läge,
+// dubbelklick = tillbaka till standard.
 class StepGrid : public juce::Component
 {
 public:
@@ -52,8 +56,10 @@ public:
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;
     void mouseUp (const juce::MouseEvent&) override;
+    void mouseDoubleClick (const juce::MouseEvent&) override;
     void refresh();
 
+    EditMode mode = EditMode::velocity;
     juce::Rectangle<float> cell (int voice, int step) const;
     int rowHeight() const { return getHeight() / slagg::dsp::numVoices; }
 
@@ -61,10 +67,10 @@ private:
     int stepAt (float x) const;
     SlaggProcessor& processor;
     int dragVoice = -1, dragStep = -1, lastPaintStep = -1;
-    bool paintValue = true, wasOn = false, velocityDrag = false;
-    float startVel = 0.8f;
+    bool paintValue = true, wasOn = false, valueDrag = false;
+    float startValue = 0.8f;
     double lastPpq = -2.0;
-    int lastHash = 0;
+    int lastHash = 0, lastProgram = -1;
 };
 
 class SeqPanel : public juce::Component
@@ -94,8 +100,13 @@ private:
     juce::Slider fromBar { juce::Slider::IncDecButtons, juce::Slider::TextBoxLeft };
     juce::Slider toBar { juce::Slider::IncDecButtons, juce::Slider::TextBoxLeft };
     juce::Label fromLabel, toLabel;
-    juce::TextButton allOn { juce::String::fromUTF8 ("Sekvens på (Seq on)") }, clearButton { "Clear" };
+    juce::TextButton allOn { "Seq on" }, clearButton { "Clear" }, rerollButton { "Reroll" };
+    juce::ComboBox kitBox;
+    juce::TextButton prevKit { "<" }, nextKit { ">" };
+    std::array<juce::TextButton, 4> modeButtons;
     juce::String lastLabel;
+    int lastProgram = -1;
+    void selectKit (int index);
 };
 } // namespace slagg::ui
 
@@ -122,7 +133,8 @@ private:
     juce::TooltipWindow tooltipWindow { this, 700 };
     juce::Component content;
     std::vector<std::unique_ptr<slagg::ui::VoiceStrip>> strips;
-    std::vector<std::unique_ptr<slagg::ui::Control>> globals;
+    std::vector<std::unique_ptr<slagg::ui::Control>> globals, rumbleControls;
+    juce::Rectangle<int> rumbleArea;
     slagg::ui::SeqPanel seqPanel;
     juce::Image panelTexture, grimeOverlay;
 

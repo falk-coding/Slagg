@@ -31,6 +31,7 @@ void SlaggProcessor::prepareToPlay (double sr, int)
     uint32_t seed = 0x51A66u;
     for (int v = 0; v < dsp::numVoices; ++v)
         voices[(size_t) v].prepare ((dsp::VoiceType) v, (float) sr, seed += 0x9E3779B9u);
+    rumble.prepare ((float) sr);
     masterGain.reset (sr, 0.02);
     masterGain.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (params.master->load(), -60.0f));
     reset();
@@ -40,6 +41,7 @@ void SlaggProcessor::reset()
 {
     for (auto& v : voices)
         v.reset();
+    rumble.reset();
     hostWasPlaying = false;
     currentPpq = -1.0;
 }
@@ -62,6 +64,7 @@ seq::Settings SlaggProcessor::currentSettings() const
     seq::Settings s;
     s.stepPpq = rateToPpq ((int) params.rate->load());
     s.swing = params.swing->load();
+    s.humanize = params.humanize->load();
     for (int v = 0; v < dsp::numVoices; ++v)
     {
         s.length[(size_t) v] = (int) params.voice[(size_t) v].len->load();
@@ -95,6 +98,8 @@ void SlaggProcessor::triggerVoice (int v, float velocity)
     voices[(size_t) v].trigger (velocity, params.voiceParams (v));
     if (v == dsp::closedHat)
         voices[(size_t) dsp::openHat].choke();   // stängd hihat stryper den öppna
+    if (v == dsp::kick)
+        rumble.duckTrigger ((float) (60.0 / hostBpm.load()) * 0.5f);   // mullret sväller tillbaka på en halv taktslag
     hitCounter[(size_t) v].fetch_add (1);
 }
 
@@ -112,6 +117,28 @@ juce::File SlaggProcessor::writeMidiExport (double fromPpq, double toPpq, uint32
         return {};
     out.flush();
     return file;
+}
+
+void SlaggProcessor::setCurrentProgram (int index)
+{
+    const auto& kits = getKits();
+    if (! juce::isPositiveAndBelow (index, (int) kits.size()))
+        return;
+    currentProgram = index;
+    applyKit (apvts, kits[(size_t) index], pattern);
+    ++programChangeCounter;
+}
+
+const juce::String SlaggProcessor::getProgramName (int index)
+{
+    const auto& kits = getKits();
+    return juce::isPositiveAndBelow (index, (int) kits.size()) ? kits[(size_t) index].name : juce::String();
+}
+
+void SlaggProcessor::reroll()
+{
+    pattern.seed = (uint32_t) juce::Random::getSystemRandom().nextInt (0x7FFFFFFF) | 1u;
+    ++programChangeCounter;
 }
 
 void SlaggProcessor::voicesExported (uint32_t voiceMask)
@@ -228,6 +255,13 @@ void SlaggProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
 
     masterGain.setTargetValue (juce::Decibels::decibelsToGain (params.master->load(), -60.0f));
 
+    dsp::RumbleParams rp;
+    rp.amount = params.rumbleAmt->load();
+    rp.decay = params.rumbleDecay->load();
+    rp.tone = params.rumbleTone->load();
+    rp.drive = params.rumbleDrive->load();
+    rp.duck = params.rumbleDuck->load();
+
     std::array<float, dsp::numVoices> panL {}, panR {};
     for (int v = 0; v < dsp::numVoices; ++v)
     {
@@ -245,15 +279,23 @@ void SlaggProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
             ++next;
         }
         const float g = masterGain.getNextValue();
+        float kickDry = 0.0f;
         for (int v = 0; v < dsp::numVoices; ++v)
         {
             auto& voice = voices[(size_t) v];
             if (! voice.isActive())
                 continue;
-            const float x = voice.process() * g;
+            const float raw = voice.process();
+            if (v == dsp::kick)
+                kickDry = raw;
+            const float x = raw * g;
             dest[(size_t) (2 * v)][i] += x * panL[(size_t) v];
             dest[(size_t) (2 * v + 1)][i] += x * panR[(size_t) v];
         }
+        // Mullret följer kickens utgång (Main eller kickens egen).
+        const float r = rumble.process (kickDry, rp) * g;
+        dest[0][i] += r;
+        dest[1][i] += r;
     }
 
     // Mjuk begränsning så att inget klipper hårt.
@@ -274,6 +316,7 @@ void SlaggProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     auto state = apvts.copyState();
     state.setProperty ("version", SLAGG_VERSION, nullptr);
+    state.setProperty ("program", currentProgram, nullptr);
     state.removeChild (state.getChildWithName ("Pattern"), nullptr);
     state.appendChild (pattern.toTree(), nullptr);
     if (auto xml = state.createXml())
@@ -291,7 +334,9 @@ void SlaggProcessor::setStateInformation (const void* data, int sizeInBytes)
             if (pt.isValid())
                 pattern.fromTree (pt);
             tree.removeChild (pt, nullptr);
+            currentProgram = juce::jlimit (0, getNumPrograms() - 1, (int) tree.getProperty ("program", 0));
             apvts.replaceState (tree);
+            ++programChangeCounter;
         }
     }
 }

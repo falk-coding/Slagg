@@ -46,22 +46,28 @@ Commits: författare `Hans Falk <hans.falk@gmail.com>`. Pusha direkt till main.
 | Del | Fil |
 |---|---|
 | Ljudmodellerna (kick, snare, clap, rim, 3 metall, 3 toms), filter, choke | `Source/Voices.h` |
+| Muller (rumble): FDN-efterklang → lågpass → mättning → ducking från kicken | `Source/Rumble.h` |
+| Fabrikskit (ljud + mönster, textformat för steg) – nya läggs sist | `Source/Kits.*` |
 | Parametrar, ljudlista (namn, GM-not, etiketter, standardvärden) | `Source/Parameters.*` |
-| Mönster, generering i PPQ, MIDI-fil (typ 1, ett spår per ljud) | `Source/Pattern.*` |
+| Mönster (velocity, probability, ratchet, nudge, frö), generering i PPQ, MIDI-fil (typ 1, ett spår per ljud) | `Source/Pattern.*` |
 | Ljudtråd, utgångar (Main + 10), transport, MIDI in, export | `Source/PluginProcessor.*` |
 | GUI: ljudremsor, rutnät, dragrutor | `Source/PluginEditor.*` |
 | Skin (från Bakelit: plåt, punktljus, rattar, LookAndFeel) | `Source/Skin.*` |
 | Installation | `packaging/mac`, `packaging/windows` |
 
-## Status (2026-11-03, v0.1.0 – etapp 1)
+## Status (2026-11-04, v0.2.0 – etapp 2 + muller + kit)
+v0.2: per steg probability/ratchet/nudge (lägesknappar i GUI), humanize, Reroll (slumpen är deterministisk per
+position + frö, så export = uppspelning), Muller (rumble) med Amount/Decay/Tone/Drive/Duck, 13 kit (Init, 3 raka,
+5 groove, 4 rumble). Hans önskemål: probability i procent (inte "var 4:e gång"), levande velocity, några raka och
+några förskjutna kit, tydligt "rumble"-driv.
+
+### v0.1.0
 Klart: 10 analoga ljud med Tune/Decay/Tone/Snap/Drive/Cutoff/Reso/Level/Pan/Out, sekvenserare (32 steg, velocity,
 egen längd per ljud, swing, rate), MIDI-dragning per ljud + "alla" mellan markörer, egna utgångar, MIDI in (GM-noter),
 choke, skin. **Inget är provlyssnat av Hans än.**
 
 **Etapper kvar:**
-2. Probability, ratchet, micro-timing, flam, accent, humanize.
 3. Parameter-lås per steg, villkor (1:2, fill …), mönster A/B + Fill, kedjning.
-4. Sample-lager per ljud (dra in WAV, Blend/Tune/Start/Decay), rumble-generator (kick → mörk reverb/distortion med ducking),
-   kits (presets), manual sv/en.
+4. Sample-lager per ljud (dra in WAV, Blend/Tune/Start/Decay), egna kit (spara/ladda), manual sv/en.
 Viktigt att Hans testar i Reason: hur dragning med flera spår beter sig (Reason: ett spår styr en enhet → notbanor),
 och hur utgångarna dyker upp på baksidan.

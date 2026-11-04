@@ -40,6 +40,13 @@ namespace pid
     inline constexpr const char* rate   = "rate";
     inline constexpr const char* swing  = "swing";
     inline constexpr const char* master = "master";
+    // v0.2
+    inline constexpr const char* humanize    = "humanize";     // 0 = av
+    inline constexpr const char* rumbleAmt   = "rumbleAmt";    // 0 = av
+    inline constexpr const char* rumbleDecay = "rumbleDecay";
+    inline constexpr const char* rumbleTone  = "rumbleTone";
+    inline constexpr const char* rumbleDrive = "rumbleDrive";
+    inline constexpr const char* rumbleDuck  = "rumbleDuck";
 
     // Per ljud (suffix)
     inline constexpr const char* sTune   = "Tune";
@@ -80,6 +87,9 @@ struct ParamPointers
     };
     std::array<Voice, dsp::numVoices> voice {};
     std::atomic<float>* rate {}; std::atomic<float>* swing {}; std::atomic<float>* master {};
+    std::atomic<float>* humanize {};
+    std::atomic<float>* rumbleAmt {}; std::atomic<float>* rumbleDecay {}; std::atomic<float>* rumbleTone {};
+    std::atomic<float>* rumbleDrive {}; std::atomic<float>* rumbleDuck {};
 
     void bind (juce::AudioProcessorValueTreeState& apvts);
     dsp::VoiceParams voiceParams (int v) const;

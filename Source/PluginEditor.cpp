@@ -227,6 +227,7 @@ void StepGrid::paint (juce::Graphics& g)
 
         for (int i = 0; i < seq::maxSteps; ++i)
         {
+            const auto vi = (size_t) v, si = (size_t) i;
             const auto r = cell (v, i).reduced (1.2f);
             const bool inLane = i < len;
             const float alpha = (inLane ? 1.0f : 0.25f) * (enabled ? 1.0f : 0.45f);
@@ -234,15 +235,68 @@ void StepGrid::paint (juce::Graphics& g)
             g.fillRect (r);
             drawEngravedBox (g, r, 0.5f);
 
-            if (pat.on[(size_t) v][(size_t) i].load())
+            if (pat.on[vi][si].load())
             {
-                const float vel = pat.velocity[(size_t) v][(size_t) i].load();
+                const float vel = pat.velocity[vi][si].load();
+                const float prob = pat.probability[vi][si].load();
+                const int rat = pat.ratchet[vi][si].load();
+                const float nudge = pat.nudge[vi][si].load();
                 const auto lit = colours::lampRed.interpolatedWith (colours::lampAmber, 1.0f - vel);
-                auto bar = r.reduced (2.5f, 2.0f);
-                g.setColour (lit.withAlpha (0.25f * alpha));
-                g.fillRect (bar);
-                g.setColour (lit.withAlpha (0.9f * alpha));
-                g.fillRect (bar.withTrimmedTop (bar.getHeight() * (1.0f - vel)));
+                // Nudge flyttar slaget synligt åt sidan.
+                auto bar = r.reduced (2.5f, 2.0f).translated (nudge * r.getWidth() * 0.6f, 0.0f);
+                // Låg sannolikhet = blekare slag.
+                const float probAlpha = 0.35f + 0.65f * prob;
+
+                switch (mode)
+                {
+                    case EditMode::probability:
+                    {
+                        g.setColour (lit.withAlpha (0.18f * alpha));
+                        g.fillRect (bar);
+                        g.setColour (juce::Colour (0xff86b4d4).withAlpha (0.9f * alpha));
+                        g.fillRect (bar.withTrimmedTop (bar.getHeight() * (1.0f - prob)));
+                        break;
+                    }
+                    case EditMode::ratchet:
+                    {
+                        g.setColour (lit.withAlpha (0.25f * alpha * probAlpha));
+                        g.fillRect (bar);
+                        g.setColour (lit.withAlpha (0.95f * alpha));
+                        const float w = bar.getWidth() / (float) rat;
+                        for (int k = 0; k < rat; ++k)
+                            g.fillRect (juce::Rectangle<float> (bar.getX() + (float) k * w + 0.5f, bar.getY(), w - 1.5f, bar.getHeight()));
+                        break;
+                    }
+                    case EditMode::nudge:
+                    {
+                        g.setColour (lit.withAlpha (0.3f * alpha * probAlpha));
+                        g.fillRect (r.reduced (2.5f, 2.0f));
+                        g.setColour (colours::text.withAlpha (0.95f * alpha));
+                        const float x = r.getCentreX() + nudge * r.getWidth();
+                        g.drawLine (x, r.getY() + 2.0f, x, r.getBottom() - 2.0f, 2.0f);
+                        break;
+                    }
+                    case EditMode::velocity:
+                    default:
+                        g.setColour (lit.withAlpha (0.25f * alpha * probAlpha));
+                        g.fillRect (bar);
+                        g.setColour (lit.withAlpha (0.9f * alpha * probAlpha));
+                        g.fillRect (bar.withTrimmedTop (bar.getHeight() * (1.0f - vel)));
+                        break;
+                }
+
+                // Små markeringar som syns i alla lägen: prick = probability < 100 %, streck = ratchet.
+                if (prob < 0.995f && mode != EditMode::probability)
+                {
+                    g.setColour (juce::Colour (0xff86b4d4).withAlpha (alpha));
+                    g.fillEllipse (r.getRight() - 5.5f, r.getY() + 2.0f, 3.5f, 3.5f);
+                }
+                if (rat > 1 && mode != EditMode::ratchet)
+                {
+                    g.setColour (colours::text.withAlpha (0.8f * alpha));
+                    for (int k = 0; k < rat; ++k)
+                        g.fillRect (r.getX() + 2.0f + (float) k * 3.0f, r.getY() + 2.0f, 2.0f, 2.0f);
+                }
             }
             if (i == play && inLane)
             {
@@ -258,14 +312,25 @@ void StepGrid::mouseDown (const juce::MouseEvent& e)
     dragVoice = juce::jlimit (0, dsp::numVoices - 1, (int) (e.position.y / (float) rowHeight()));
     dragStep = lastPaintStep = stepAt (e.position.x);
     auto& pat = processor.getPattern();
-    wasOn = pat.on[(size_t) dragVoice][(size_t) dragStep].load();
-    startVel = pat.velocity[(size_t) dragVoice][(size_t) dragStep].load();
-    velocityDrag = false;
+    const auto vi = (size_t) dragVoice, si = (size_t) dragStep;
+    wasOn = pat.on[vi][si].load();
+    valueDrag = false;
+    switch (mode)
+    {
+        case EditMode::probability: startValue = pat.probability[vi][si].load(); break;
+        case EditMode::ratchet:     startValue = (float) pat.ratchet[vi][si].load(); break;
+        case EditMode::nudge:       startValue = pat.nudge[vi][si].load(); break;
+        case EditMode::velocity:
+        default:                    startValue = pat.velocity[vi][si].load(); break;
+    }
     if (! wasOn)
     {
         paintValue = true;
-        pat.on[(size_t) dragVoice][(size_t) dragStep] = true;
-        pat.velocity[(size_t) dragVoice][(size_t) dragStep] = 0.8f;
+        pat.on[vi][si] = true;
+        pat.velocity[vi][si] = 0.8f;
+        pat.probability[vi][si] = 1.0f;
+        pat.ratchet[vi][si] = 1;
+        pat.nudge[vi][si] = 0.0f;
         markDirty (processor);
         repaint();
     }
@@ -276,13 +341,21 @@ void StepGrid::mouseDrag (const juce::MouseEvent& e)
     if (dragVoice < 0)
         return;
     auto& pat = processor.getPattern();
+    const auto vi = (size_t) dragVoice, si = (size_t) dragStep;
+    const float dy = (float) e.getDistanceFromDragStartY(), dx = (float) e.getDistanceFromDragStartX();
 
-    // Dra upp/ner på ett slag = velocity. Dra åt sidan = måla fler slag.
-    if (wasOn && (velocityDrag || std::abs (e.getDistanceFromDragStartY()) > 3))
+    // Dra på ett befintligt slag = ändra värdet i valt läge. Dra åt sidan från ett tomt = måla fler slag.
+    if (wasOn && (valueDrag || std::abs (dy) > 3.0f || std::abs (dx) > 3.0f))
     {
-        velocityDrag = true;
-        const float vel = juce::jlimit (0.05f, 1.0f, startVel - (float) e.getDistanceFromDragStartY() / 80.0f);
-        pat.velocity[(size_t) dragVoice][(size_t) dragStep] = vel;
+        valueDrag = true;
+        switch (mode)
+        {
+            case EditMode::probability: pat.probability[vi][si] = juce::jlimit (0.0f, 1.0f, startValue - dy / 80.0f); break;
+            case EditMode::ratchet:     pat.ratchet[vi][si] = juce::jlimit (1, seq::maxRatchet, juce::roundToInt (startValue - dy / 14.0f)); break;
+            case EditMode::nudge:       pat.nudge[vi][si] = juce::jlimit (-0.5f, 0.5f, startValue + (std::abs (dx) > std::abs (dy) ? dx : -dy) / 80.0f); break;
+            case EditMode::velocity:
+            default:                    pat.velocity[vi][si] = juce::jlimit (0.05f, 1.0f, startValue - dy / 80.0f); break;
+        }
     }
     else if (! wasOn)
     {
@@ -290,7 +363,7 @@ void StepGrid::mouseDrag (const juce::MouseEvent& e)
         if (step != lastPaintStep)
         {
             lastPaintStep = step;
-            pat.on[(size_t) dragVoice][(size_t) step] = paintValue;
+            pat.on[vi][(size_t) step] = paintValue;
         }
     }
     markDirty (processor);
@@ -299,13 +372,32 @@ void StepGrid::mouseDrag (const juce::MouseEvent& e)
 
 void StepGrid::mouseUp (const juce::MouseEvent& e)
 {
-    if (dragVoice >= 0 && wasOn && ! velocityDrag && e.getDistanceFromDragStart() < 3)
+    if (dragVoice >= 0 && wasOn && ! valueDrag && e.getDistanceFromDragStart() < 3 && e.getNumberOfClicks() < 2)
     {
         processor.getPattern().on[(size_t) dragVoice][(size_t) dragStep] = false;
         markDirty (processor);
         repaint();
     }
     dragVoice = -1;
+}
+
+void StepGrid::mouseDoubleClick (const juce::MouseEvent& e)
+{
+    // Dubbelklick: tillbaka till standard för valt läge (och slaget finns kvar).
+    const int v = juce::jlimit (0, dsp::numVoices - 1, (int) (e.position.y / (float) rowHeight()));
+    const auto vi = (size_t) v, si = (size_t) stepAt (e.position.x);
+    auto& pat = processor.getPattern();
+    pat.on[vi][si] = true;
+    switch (mode)
+    {
+        case EditMode::probability: pat.probability[vi][si] = 1.0f; break;
+        case EditMode::ratchet:     pat.ratchet[vi][si] = 1; break;
+        case EditMode::nudge:       pat.nudge[vi][si] = 0.0f; break;
+        case EditMode::velocity:
+        default:                    pat.velocity[vi][si] = 0.8f; break;
+    }
+    markDirty (processor);
+    repaint();
 }
 
 void StepGrid::refresh()
@@ -315,10 +407,12 @@ void StepGrid::refresh()
     int hash = 0;
     for (int v = 0; v < dsp::numVoices; ++v)
         hash = hash * 31 + s.length[(size_t) v] * 2 + (s.enabled[(size_t) v] ? 1 : 0);
-    if (std::abs (ppq - lastPpq) > 1.0e-9 || hash != lastHash)
+    const int prog = processor.programChangeCounter.load();
+    if (std::abs (ppq - lastPpq) > 1.0e-9 || hash != lastHash || prog != lastProgram)
     {
         lastPpq = ppq;
         lastHash = hash;
+        lastProgram = prog;
         repaint();
     }
 }
@@ -388,6 +482,54 @@ SeqPanel::SeqPanel (SlaggProcessor& p)
     fromLabel.setText (juce::String::fromUTF8 ("Från (From)"), juce::dontSendNotification);
     toLabel.setText ("Till (To)", juce::dontSendNotification);
 
+    // Kit (färdiga ljud + mönster), grupperade per kategori.
+    {
+        const auto& kits = getKits();
+        juce::StringArray cats;
+        for (const auto& k : kits)
+            cats.addIfNotAlreadyThere (k.category);
+        for (const auto& c : cats)
+        {
+            kitBox.addSectionHeading (c);
+            for (int i = 0; i < (int) kits.size(); ++i)
+                if (kits[(size_t) i].category == c)
+                    kitBox.addItem (kits[(size_t) i].name, i + 1);
+        }
+        kitBox.setTextWhenNothingSelected ("Kit");
+        kitBox.setTooltip (juce::String::fromUTF8 ("Färdiga kit: ljud + mönster (factory kits). Utgångsvalen (Out) behålls."));
+        kitBox.onChange = [this] { if (kitBox.getSelectedId() > 0) selectKit (kitBox.getSelectedId() - 1); };
+        addAndMakeVisible (kitBox);
+        prevKit.onClick = [this] { selectKit (juce::jmax (0, processor.getCurrentProgram() - 1)); };
+        nextKit.onClick = [this] { selectKit (juce::jmin (processor.getNumPrograms() - 1, processor.getCurrentProgram() + 1)); };
+        addAndMakeVisible (prevKit);
+        addAndMakeVisible (nextKit);
+    }
+
+    // Redigeringsläge för rutnätet.
+    {
+        const char* names[] { "Velocity", "Prob", "Ratchet", "Nudge" };
+        const char* tips[] {
+            "Dra upp/ner på ett slag: styrka (velocity). Dubbelklick = 80 %.",
+            "Dra upp/ner: sannolikhet att slaget spelas (probability). Dubbelklick = 100 %.",
+            "Dra upp/ner: 1–4 snabba slag i steget (ratchet). Dubbelklick = 1.",
+            "Dra åt sidan: lite före/efter takten (nudge). Dubbelklick = i takt." };
+        for (int i = 0; i < 4; ++i)
+        {
+            auto& b = modeButtons[(size_t) i];
+            b.setButtonText (names[i]);
+            b.setTooltip (juce::String::fromUTF8 (tips[i]));
+            b.setClickingTogglesState (true);
+            b.setRadioGroupId (4711);
+            b.onClick = [this, i] { grid.mode = (EditMode) i; grid.repaint(); };
+            addAndMakeVisible (b);
+        }
+        modeButtons[0].setToggleState (true, juce::dontSendNotification);
+    }
+
+    rerollButton.setTooltip (juce::String::fromUTF8 ("Slå om tärningen: ny variant av probability och humanize (new random variation)"));
+    rerollButton.onClick = [this] { processor.reroll(); markDirty (processor); grid.repaint(); };
+    addAndMakeVisible (rerollButton);
+
     allOn.setTooltip (juce::String::fromUTF8 ("Låt sekvensern spela alla ljud igen (re-enable all)"));
     allOn.onClick = [this]
     {
@@ -399,6 +541,13 @@ SeqPanel::SeqPanel (SlaggProcessor& p)
     clearButton.onClick = [this] { processor.getPattern().clear(); markDirty (processor); grid.repaint(); };
     addAndMakeVisible (allOn);
     addAndMakeVisible (clearButton);
+}
+
+void SeqPanel::selectKit (int index)
+{
+    processor.setCurrentProgram (index);
+    kitBox.setSelectedId (index + 1, juce::dontSendNotification);
+    grid.repaint();
 }
 
 ExportRange SeqPanel::computeRange() const
@@ -468,6 +617,22 @@ void SeqPanel::resized()
         row.seq.setBounds (line);
     }
 
+    {
+        auto row = right.removeFromTop (24);
+        nextKit.setBounds (row.removeFromRight (26));
+        row.removeFromRight (2);
+        prevKit.setBounds (row.removeFromRight (26));
+        row.removeFromRight (4);
+        kitBox.setBounds (row);
+    }
+    right.removeFromTop (5);
+    {
+        auto row = right.removeFromTop (24);
+        const int w = row.getWidth() / 4;
+        for (auto& b : modeButtons)
+            b.setBounds (row.removeFromLeft (w).reduced (1, 0));
+    }
+    right.removeFromTop (5);
     rangeMode.setBounds (right.removeFromTop (24));
     right.removeFromTop (4);
     auto bars = right.removeFromTop (24);
@@ -476,17 +641,23 @@ void SeqPanel::resized()
     toLabel.setBounds (bars.removeFromLeft (46));
     toBar.setBounds (bars.reduced (2, 0));
     auto buttons = right.removeFromBottom (26);
-    allOn.setBounds (buttons.removeFromLeft (buttons.getWidth() * 2 / 3).reduced (0, 0));
-    buttons.removeFromLeft (4);
-    clearButton.setBounds (buttons);
-    right.removeFromBottom (6);
-    right.removeFromTop (6);
+    const int bw = buttons.getWidth() / 3;
+    allOn.setBounds (buttons.removeFromLeft (bw).reduced (1, 0));
+    rerollButton.setBounds (buttons.removeFromLeft (bw).reduced (1, 0));
+    clearButton.setBounds (buttons.reduced (1, 0));
+    right.removeFromBottom (5);
+    right.removeFromTop (5);
     dragAll.setBounds (right);
 }
 
 void SeqPanel::refresh()
 {
     grid.refresh();
+    if (const int prog = processor.programChangeCounter.load(); prog != lastProgram)
+    {
+        lastProgram = prog;
+        kitBox.setSelectedId (processor.getCurrentProgram() + 1, juce::dontSendNotification);
+    }
     const auto range = computeRange();
     if (range.label != lastLabel)
     {
@@ -509,8 +680,17 @@ SlaggEditor::SlaggEditor (SlaggProcessor& p) : AudioProcessorEditor (&p), proces
     }
     globals.push_back (std::make_unique<Control> (p.apvts, pid::rate, "Rate", colours::accent2, true));
     globals.push_back (std::make_unique<Control> (p.apvts, pid::swing, "Swing", colours::accent2, false));
+    globals.push_back (std::make_unique<Control> (p.apvts, pid::humanize, "Humanize", colours::accent2, false));
     globals.push_back (std::make_unique<Control> (p.apvts, pid::master, "Volume", colours::accent2, false));
     for (auto& c : globals)
+        content.addAndMakeVisible (*c);
+    // Muller (rumble): kicken in i en mörk efterklang, lågpass, mättning och ducking.
+    rumbleControls.push_back (std::make_unique<Control> (p.apvts, pid::rumbleAmt, "Amount", colours::accent2, false));
+    rumbleControls.push_back (std::make_unique<Control> (p.apvts, pid::rumbleDecay, "Decay", colours::accent2, false));
+    rumbleControls.push_back (std::make_unique<Control> (p.apvts, pid::rumbleTone, "Tone", colours::accent2, false));
+    rumbleControls.push_back (std::make_unique<Control> (p.apvts, pid::rumbleDrive, "Drive", colours::accent2, false));
+    rumbleControls.push_back (std::make_unique<Control> (p.apvts, pid::rumbleDuck, "Duck", colours::accent2, false));
+    for (auto& c : rumbleControls)
         content.addAndMakeVisible (*c);
     content.addAndMakeVisible (seqPanel);
     addAndMakeVisible (content);
@@ -565,6 +745,21 @@ void SlaggEditor::paint (juce::Graphics& g)
     g.setColour (colours::metal.brighter (0.6f));
     g.drawText ("SLAGG", header, juce::Justification::centredLeft);
     const float w = juce::GlyphArrangement::getStringWidth (title, "SLAGG");
+
+    // Muller-rubriken med en tunn ram runt rattarna.
+    if (! rumbleArea.isEmpty())
+    {
+        const auto ra = rumbleArea.toFloat().translated (0.0f, 0.0f);
+        g.setColour (colours::hairline.withAlpha (0.35f));
+        g.drawRoundedRectangle (ra.reduced (1.0f), 3.0f, 1.0f);
+        auto t = ra.withWidth (96.0f).reduced (10.0f, 6.0f);
+        g.setFont (panelFont (15.0f, false).withExtraKerningFactor (0.2f));
+        g.setColour (colours::text);
+        g.drawText ("MULLER", t.removeFromTop (t.getHeight() * 0.55f), juce::Justification::bottomLeft);
+        g.setFont (panelFont (10.0f, false).withExtraKerningFactor (0.15f));
+        g.setColour (colours::dimText);
+        g.drawText ("(RUMBLE)", t, juce::Justification::topLeft);
+    }
     g.setFont (panelFont (11.5f, false).withExtraKerningFactor (0.2f));
     g.setColour (colours::dimText.withAlpha (0.8f));
     g.drawText (juce::String::fromUTF8 ("FALK INSTRUMENTS  ·  v" SLAGG_VERSION), header.withTrimmedLeft (w + 14.0f).translated (0.0f, 4.0f),
@@ -599,10 +794,18 @@ void SlaggEditor::resized()
     content.setTransform (juce::AffineTransform::scale (scale));
 
     auto top = juce::Rectangle<int> (earW, 0, innerW, voicesH).reduced (12, 6);
-    auto header = top.removeFromTop (52);
-    header.removeFromLeft (420);
+    auto header = top.removeFromTop (56);
+    header.removeFromLeft (300);
     for (auto it = globals.rbegin(); it != globals.rend(); ++it)
-        (*it)->setBounds (header.removeFromRight ((*it == globals.front()) ? 110 : 70));
+        (*it)->setBounds (header.removeFromRight ((*it == globals.front()) ? 100 : 64));
+    header.removeFromRight (24);
+    rumbleArea = header.removeFromRight (64 * (int) rumbleControls.size() + 96);
+    {
+        auto r = rumbleArea;
+        r.removeFromLeft (96);   // rubrik
+        for (auto& c : rumbleControls)
+            c->setBounds (r.removeFromLeft (64));
+    }
 
     const int w = top.getWidth() / dsp::numVoices;
     for (auto& s : strips)

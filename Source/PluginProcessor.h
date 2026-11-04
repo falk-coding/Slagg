@@ -3,6 +3,8 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "Parameters.h"
 #include "Pattern.h"
+#include "Kits.h"
+#include "Rumble.h"
 
 class SlaggProcessor : public juce::AudioProcessor
 {
@@ -26,10 +28,10 @@ public:
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 5.0; }
 
-    int getNumPrograms() override { return 1; }
-    int getCurrentProgram() override { return 0; }
-    void setCurrentProgram (int) override {}
-    const juce::String getProgramName (int) override { return "Slagg"; }
+    int getNumPrograms() override { return (int) slagg::getKits().size(); }
+    int getCurrentProgram() override { return currentProgram; }
+    void setCurrentProgram (int index) override;
+    const juce::String getProgramName (int index) override;
     void changeProgramName (int, const juce::String&) override {}
 
     void getStateInformation (juce::MemoryBlock& destData) override;
@@ -40,6 +42,10 @@ public:
     //==============================================================================
     slagg::seq::Pattern& getPattern() noexcept { return pattern; }
     slagg::seq::Settings currentSettings() const;
+    // Bumpas när kit eller sparat läge laddas, så att GUI:t kan rita om mönstret.
+    std::atomic<int> programChangeCounter { 0 };
+    // Nytt frö till slumpen (probability/humanize): samma mönster, ny variant.
+    void reroll();
 
     // Spela ett ljud direkt (GUI: klick på namnet). Trådsäkert – körs i nästa block.
     void audition (int voice, float velocity = 0.9f);
@@ -69,6 +75,8 @@ private:
     slagg::ParamPointers params;
     std::array<slagg::dsp::DrumVoice, slagg::dsp::numVoices> voices;
     slagg::seq::Pattern pattern;
+    slagg::dsp::Rumble rumble;
+    int currentProgram = 0;
     std::vector<slagg::seq::Hit> hits;
 
     struct Event { int sample; int voice; float velocity; };

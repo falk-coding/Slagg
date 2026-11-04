@@ -10,6 +10,8 @@ namespace
     using Range = juce::NormalisableRange<float>;
 
     juce::ParameterID id (const juce::String& s) { return { s, 1 }; }
+    // Parametrar som tillkommit efter första releasen får högre versionshint (AU-värdar).
+    juce::ParameterID id2 (const juce::String& s) { return { s, 2 }; }
 
     juce::AudioParameterFloatAttributes percent()
     {
@@ -34,6 +36,21 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     global->addChild (std::make_unique<APF> (id (pid::swing), "Swing", Range (0.0f, 1.0f), 0.0f, percent()));
     global->addChild (std::make_unique<APF> (id (pid::master), "Master", Range (-36.0f, 6.0f), -3.0f, unit ("dB", 1)));
     layout.add (std::move (global));
+
+    // v0.2: standardvärdena ändrar inget (humanize 0, muller 0) – projekt från v0.1 låter som förut.
+    auto groove = std::make_unique<juce::AudioProcessorParameterGroup> ("groove", "Groove", "|");
+    groove->addChild (std::make_unique<APF> (id2 (pid::humanize), "Humanize", Range (0.0f, 1.0f), 0.0f, percent()));
+    layout.add (std::move (groove));
+
+    auto rumble = std::make_unique<juce::AudioProcessorParameterGroup> ("rumble", "Rumble", "|");
+    Range tone (40.0f, 500.0f);
+    tone.setSkewForCentre (150.0f);
+    rumble->addChild (std::make_unique<APF> (id2 (pid::rumbleAmt), "Rumble Amount", Range (0.0f, 1.0f), 0.0f, percent()));
+    rumble->addChild (std::make_unique<APF> (id2 (pid::rumbleDecay), "Rumble Decay", Range (0.0f, 1.0f), 0.5f, percent()));
+    rumble->addChild (std::make_unique<APF> (id2 (pid::rumbleTone), "Rumble Tone", tone, 160.0f, unit ("Hz")));
+    rumble->addChild (std::make_unique<APF> (id2 (pid::rumbleDrive), "Rumble Drive", Range (0.0f, 1.0f), 0.4f, percent()));
+    rumble->addChild (std::make_unique<APF> (id2 (pid::rumbleDuck), "Rumble Duck", Range (0.0f, 1.0f), 0.7f, percent()));
+    layout.add (std::move (rumble));
 
     for (int v = 0; v < dsp::numVoices; ++v)
     {
@@ -70,6 +87,9 @@ void ParamPointers::bind (juce::AudioProcessorValueTreeState& s)
         return v;
     };
     rate = p (pid::rate); swing = p (pid::swing); master = p (pid::master);
+    humanize = p (pid::humanize);
+    rumbleAmt = p (pid::rumbleAmt); rumbleDecay = p (pid::rumbleDecay); rumbleTone = p (pid::rumbleTone);
+    rumbleDrive = p (pid::rumbleDrive); rumbleDuck = p (pid::rumbleDuck);
     for (int v = 0; v < dsp::numVoices; ++v)
     {
         auto& x = voice[(size_t) v];

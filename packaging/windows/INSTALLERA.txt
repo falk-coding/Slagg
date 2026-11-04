@@ -15,5 +15,15 @@ Snabbt igång:
 - ⇢ på varje rad: dra ljudet till ett eget MIDI-spår. "Dra alla till DAW": ett spår per ljud.
   Längden tas från DAW:ns markörer (eller Från/Till). Sekvensern slutar sedan spela de ljuden.
 - Out = Own skickar ljudet till sin egen utgång (för separata mixerkanaler).
+- Kit: välj färdiga ljud + mönster i listan uppe till höger i sekvenseraren (< > bläddrar).
+- Lägen för rutnätet: Velocity (styrka), Prob (sannolikhet, t.ex. 66 % = spelar ofta men inte alltid),
+  Ratchet (1–4 snabba slag), Nudge (lite före/efter takten). Dra på ett slag; dubbelklick = standard.
+  Prick i hörnet = sannolikhet under 100 %. Streck = ratchet.
+- Reroll: ny variant av slumpen. Samma takt låter alltid likadant tills du trycker Reroll –
+  och det du drar till DAW:n är exakt det du hörde.
+- Humanize: små variationer i tid och styrka på allt.
+- MULLER (RUMBLE): kicken skickas in i en mörk efterklang som lågpassas, mättas och duckas av varje kick.
+  Amount = mängd (0 = av), Decay = längd, Tone = hur lågt, Drive = smuts, Duck = hur mycket kicken trycker undan.
+  Mullret går till samma utgång som kicken.
 - MIDI in: C1 Kick, C#1 Rim, D1 Snare, D#1 Clap, F1 Tom low, F#1 Closed hat, A1 Tom mid,
   A#1 Open hat, C2 Tom high, C#2 Cymbal (GM-trumnoter).
