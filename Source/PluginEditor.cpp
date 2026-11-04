@@ -533,6 +533,7 @@ SeqPanel::SeqPanel (SlaggProcessor& p)
     songControls.push_back (std::make_unique<Control> (processor.apvts, pid::evolve, "Evolve", colours::accent2, false));
     songControls.push_back (std::make_unique<Control> (processor.apvts, pid::fills, "Fills", colours::accent2, false));
     songControls.push_back (std::make_unique<Control> (processor.apvts, pid::phrase, "Phrase", colours::accent2, true));
+    songControls.push_back (std::make_unique<Control> (processor.apvts, pid::arrForm, "Form", colours::accent2, true));
     for (auto* list : { &grooveControls, &songControls })
         for (auto& c : *list)
             addAndMakeVisible (*c);
@@ -633,12 +634,13 @@ void SeqPanel::resized()
         for (size_t i = 1; i < grooveControls.size(); ++i)
             grooveControls[i]->setBounds (row.removeFromLeft (70));
         row.removeFromLeft (20);
-        songArea = row.removeFromLeft (100 + 70 * 2 + 96).reduced (0, 1);
+        songArea = row.removeFromLeft (100 + 70 * 2 + 96 + 110).reduced (0, 1);
         auto sa = songArea;
         sa.removeFromLeft (100);
         songControls[0]->setBounds (sa.removeFromLeft (70));
         songControls[1]->setBounds (sa.removeFromLeft (70));
-        songControls[2]->setBounds (sa);
+        songControls[2]->setBounds (sa.removeFromLeft (96));
+        songControls[3]->setBounds (sa);
     }
     r.removeFromTop (4);
     r.removeFromTop (14);   // stegnummer

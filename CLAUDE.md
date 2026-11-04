@@ -42,6 +42,12 @@ inputs `{"release_tag": "vX.Y.Z"}`; kolla `get_release_by_tag` att `Slagg-mac.zi
 Höj `project(... VERSION x.y.z)`. Byter man macOS-runner: byt även cache-nyckeln.
 Commits: författare `Hans Falk <hans.falk@gmail.com>`. Pusha direkt till main.
 
+## Gemensam låtform (Slagg + Bakelit)
+`Arrangement.h` (`falk::arr`) är **identisk** i Slagg (`Source/Arrangement.h`) och Bakelit (`Source/seq/Arrangement.h`).
+Ändra alltid båda samtidigt – annars hamnar breaks/drops på olika takter. Parametern heter `arrForm` i båda
+(Off/Classic/Long break/Hypnotic/Short). Live räknas formen från DAW:ns markörer, vid dragning från exportområdet.
+Break 32 takter (Short: 16), sista 8 = buildup; första takten efter break = drop. Hans val: 32 takter räcker.
+
 ## Var saker finns
 | Del | Fil |
 |---|---|
@@ -55,7 +61,13 @@ Commits: författare `Hans Falk <hans.falk@gmail.com>`. Pusha direkt till main.
 | Skin (från Bakelit: plåt, punktljus, rattar, LookAndFeel) | `Source/Skin.*` |
 | Installation | `packaging/mac`, `packaging/windows` |
 
-## Status (2026-11-04, v0.3.0 – Låt/Song + 10 Song-kit + koppar-Cutoff)
+## Status (2026-11-04, v0.4.0 – låtform)
+v0.4: Form (låtform) i Låt-sektionen. Trummor: intro = kick + stängd hihat, uppbyggnad = ljuden kommer in ett efter
+ett, break = inga trummor, buildup = virvelrullning 1/4 -> 1/32 med paus sista åttondelen, drop = cymbal, outro = kick + hattar
+som tonar ut. "Dra alla" får extraspåren Riser (en ton genom varje buildup) och Impact (ett slag per drop) + markörer.
+Test: delarna, trumfritt break, accelererande rullning, cymbal på drop, Riser/Impact, markörer, live = export 104 takter.
+
+### v0.3.0 – Låt/Song + 10 Song-kit + koppar-Cutoff
 v0.3: LÅT (Song)-sektion: Evolve (täthetskurva per ljud och fras, kicken känslighet 0), Fills (fill i frasens sista
 taktslag på toms/virvel + cymbal på nästa fras, hattar viker undan), Phrase (4/8/16/32 takter). Allt deterministiskt
 per takt + frö -> 5 min export = uppspelning, och olika i varje takt. Test simulerar 5 min/130 BPM per Song-kit

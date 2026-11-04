@@ -29,6 +29,10 @@ Snabbt igång:
   Evolve = varje ljud andas långsamt över låten (hattar tunnas ut och byggs upp, toms kommer och går; kicken rörs aldrig).
   Fills = chans till fill på toms/virvel i frasens sista takt, ofta följt av cymbal på nästa fras.
   Phrase = frasens längd (4/8/16/32 takter). Börja med ett kit som heter "Song - …".
+  Form = låtform för hela dragningen (Classic, Long break, Hypnotic, Short): intro, uppbyggnad, huvuddel,
+  break 32 takter utan trummor där en virvelrullning accelererar mot dropet, cymbal på dropet, outro.
+  "Dra alla" får även spåren Riser och Impact (lägg egna ljud på dem) och markörer för delarna.
+  Bakelit följer samma låtform: samma markörer = break och drop på samma takter.
 - Koppar på Cutoff: alla Cutoff-rattar har kopparfärgad topp (falk elektros signatur).
 - MIDI in: C1 Kick, C#1 Rim, D1 Snare, D#1 Clap, F1 Tom low, F#1 Closed hat, A1 Tom mid,
   A#1 Open hat, C2 Tom high, C#2 Cymbal (GM-trumnoter).

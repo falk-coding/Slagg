@@ -51,6 +51,8 @@ namespace pid
     inline constexpr const char* evolve      = "evolve";
     inline constexpr const char* fills       = "fills";
     inline constexpr const char* phrase      = "phrase";
+    // v0.4 Låtform (arrangemang): Off som standard.
+    inline constexpr const char* arrForm     = "arrForm";
 
     // Per ljud (suffix)
     inline constexpr const char* sTune   = "Tune";
@@ -70,6 +72,8 @@ namespace pid
     inline juce::String id (int voice, const char* suffix) { return juce::String (voiceInfo[(size_t) voice].prefix) + suffix; }
 }
 
+// Samma ordning som falk::arr::Form (Arrangement.h).
+inline const juce::StringArray arrFormNames { "Off", "Classic", "Long break", "Hypnotic", "Short" };
 inline const juce::StringArray phraseNames { "4 bars", "8 bars", "16 bars", "32 bars" };
 inline int phraseBars (int index) { static constexpr int b[] { 4, 8, 16, 32 }; return b[juce::jlimit (0, 3, index)]; }
 
@@ -98,6 +102,7 @@ struct ParamPointers
     std::atomic<float>* rumbleAmt {}; std::atomic<float>* rumbleDecay {}; std::atomic<float>* rumbleTone {};
     std::atomic<float>* rumbleDrive {}; std::atomic<float>* rumbleDuck {};
     std::atomic<float>* evolve {}; std::atomic<float>* fills {}; std::atomic<float>* phrase {};
+    std::atomic<float>* arrForm {};
 
     void bind (juce::AudioProcessorValueTreeState& apvts);
     dsp::VoiceParams voiceParams (int v) const;

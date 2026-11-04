@@ -2,6 +2,7 @@
 //   SlaggTests [--wav-dir DIR] [--screenshot FILE]
 #include "../Source/PluginProcessor.h"
 #include "../Source/PluginEditor.h"
+#include "../Source/Arrangement.h"
 #include <iostream>
 #include <map>
 #include <set>
@@ -41,7 +42,7 @@ void setParam (SlaggProcessor& p, const juce::String& id, float value)
 
 struct PlayHead : juce::AudioPlayHead
 {
-    double ppq = 0, bpm = 128;
+    double ppq = 0, bpm = 128, loopStart = 4.0, loopEnd = 20.0;
     bool playing = false;
     juce::Optional<PositionInfo> getPosition() const override
     {
@@ -50,7 +51,7 @@ struct PlayHead : juce::AudioPlayHead
         p.setBpm (bpm);
         p.setIsPlaying (playing);
         p.setTimeSignature (TimeSignature { 4, 4 });
-        p.setLoopPoints (LoopPoints { 4.0, 20.0 });
+        p.setLoopPoints (LoopPoints { loopStart, loopEnd });
         return p;
     }
 };
@@ -415,10 +416,13 @@ void testGroove()
 
 // Spelar med transport och returnerar topp, rms och slag per ljud.
 struct TransportResult { float peak = 0; double rms = 0; bool finite = true; std::array<uint32_t, dsp::numVoices> hits {}; double end = 0; };
-TransportResult runTransport (SlaggProcessor& p, double bars, double bpm, juce::AudioBuffer<float>* capture = nullptr)
+TransportResult runTransport (SlaggProcessor& p, double bars, double bpm, juce::AudioBuffer<float>* capture = nullptr,
+                              double loopStart = 4.0, double loopEnd = 20.0)
 {
     PlayHead ph;
     ph.bpm = bpm;
+    ph.loopStart = loopStart;
+    ph.loopEnd = loopEnd;
     const double sr = 48000.0;
     const int block = 512;
     p.setPlayHead (&ph);
@@ -574,6 +578,79 @@ void testSongs()
     check (songs == 10, "väntade 10 Song-kit, hittade " + juce::String (songs));
 }
 
+void testArrangement()
+{
+    std::cout << "Låtform (arrangemang):" << std::endl;
+    using falk::arr::Part;
+    // Klassisk form över 160 takter: intro 16, uppbyggnad 16, huvuddel 32, break 32 (buildup sista 8), ... outro 16.
+    auto at = [] (int bar) { return falk::arr::sectionAt (falk::arr::classic, bar * 4.0, 0.0, 640.0, 4.0); };
+    check (at (0).part == Part::intro && at (16).part == Part::build && at (32).part == Part::main
+               && at (64).part == Part::breakdown && at (88).part == Part::buildup && at (96).part == Part::main
+               && at (96).drop && ! at (32).drop && at (144).part == Part::outro && at (159).part == Part::outro,
+           "låtformens delar hamnar fel");
+
+    auto p = makeProc();
+    p->setCurrentProgram (13);   // Song - Bunker Night
+    setParam (*p, pid::arrForm, (float) falk::arr::classic);
+    const auto file = p->writeMidiExport (0.0, 640.0, 0xFFFFFFFFu, "test-arr.mid");
+    juce::FileInputStream in (file);
+    juce::MidiFile mf;
+    check (in.openedOk() && mf.readFrom (in), "arrangemangsexporten kan inte läsas");
+    const double tpq = mf.getTimeFormat();
+
+    std::map<juce::String, std::vector<double>> tracks;   // spårnamn -> note on (ppq)
+    juce::StringArray markerNames;
+    for (int t = 0; t < mf.getNumTracks(); ++t)
+    {
+        juce::String name;
+        for (const auto* e : *mf.getTrack (t))
+        {
+            if (e->message.isTrackNameEvent()) name = e->message.getTextFromTextMetaEvent();
+            if (e->message.isTextMetaEvent() && e->message.getMetaEventType() == 6) markerNames.add (e->message.getTextFromTextMetaEvent());
+            if (e->message.isNoteOn()) tracks[name].push_back (e->message.getTimeStamp() / tpq);
+        }
+    }
+    auto countIn = [&] (const juce::String& track, int barFrom, int barTo)
+    {
+        int c = 0;
+        for (double x : tracks[track]) c += (x >= barFrom * 4.0 && x < barTo * 4.0) ? 1 : 0;
+        return c;
+    };
+    int drumsInBreak = 0, introOther = 0;
+    for (const auto& info : voiceInfo)
+    {
+        const juce::String n (info.shortName);
+        drumsInBreak += countIn (n, 64, 88) + (n == "Snare" ? 0 : countIn (n, 88, 96));
+        if (n != "Kick" && n != "Closed hat") introOther += countIn (n, 0, 16);
+    }
+    check (drumsInBreak == 0, "trummor spelar i breaket (" + juce::String (drumsInBreak) + " slag)");
+    check (introOther == 0, "andra ljud än kick/hihat i introt");
+    check (countIn ("Kick", 32, 64) >= 120, "huvuddelen saknar kick");
+    const int rollStart = countIn ("Snare", 88, 89), rollEnd = countIn ("Snare", 94, 95);
+    check (rollStart > 0 && rollEnd > rollStart * 3, "virvelrullningen accelererar inte (" + juce::String (rollStart) + " -> " + juce::String (rollEnd) + ")");
+    bool crashOnDrop = false;
+    for (double x : tracks["Cymbal"]) crashOnDrop = crashOnDrop || std::abs (x - 96.0 * 4.0) < 1e-6;
+    check (crashOnDrop, "ingen cymbal på dropet");
+    check (countIn ("Riser", 88, 96) == 1 && countIn ("Impact", 96, 97) == 1, "Riser/Impact-spåren saknas eller hamnar fel");
+    check (markerNames.contains ("Intro") && markerNames.contains ("Break") && markerNames.contains ("Drop")
+               && markerNames.contains ("Outro"), "markörerna saknas");
+
+    // Live = export: spela 104 takter med DAW-markörerna över hela låten (0–640) och jämför slag per ljud.
+    std::array<uint32_t, dsp::numVoices> before {};
+    const auto r = runTransport (*p, 104.0, 130.0, nullptr, 0.0, 640.0);
+    juce::ignoreUnused (before);
+    for (int v = 0; v < dsp::numVoices; ++v)
+    {
+        int exported = 0;
+        for (double x : tracks[voiceInfo[(size_t) v].shortName]) exported += x < r.end - 1e-9 ? 1 : 0;
+        check ((int) r.hits[(size_t) v] == exported, juce::String (voiceInfo[(size_t) v].shortName) + ": live "
+                   + juce::String ((int) r.hits[(size_t) v]) + " men exporten " + juce::String (exported) + " med låtform");
+    }
+    check (r.finite && r.peak <= 0.98f, "låtformen ger klipp/NaN");
+    std::cout << "  break utan trummor, rullning " << rollStart << " -> " << rollEnd << " slag/takt, cymbal på drop, Riser/Impact, "
+              << markerNames.size() << " markörer, live = export" << std::endl;
+}
+
 void testRumble()
 {
     std::cout << "Muller (rumble):" << std::endl;
@@ -681,6 +758,7 @@ int main (int argc, char** argv)
     testGroove();
     testKits (wavDir);
     testSongs();
+    testArrangement();
     testRumble();
     testState();
     if (shot != juce::File())

@@ -56,6 +56,10 @@ struct Settings
     float fills = 0.0f;                           // 0..1, chans till fill (toms/virvel) i sista takten av en fras
     int phraseBars = 8;                           // frasens längd i takter
     double barPpq = 4.0;                          // en takts längd (från taktarten)
+    // Låtform (falk::arr): intro, uppbyggnad, huvuddel, break 32 takter med buildup, drop, outro.
+    // arrStart/arrEnd = arrangemangets gränser (markörerna / exportområdet). arrEnd <= arrStart = inget slut.
+    int arrForm = 0;
+    double arrStart = 0.0, arrEnd = 0.0;
     std::array<int, dsp::numVoices> length {};    // 1..32 per ljud
     std::array<bool, dsp::numVoices> enabled {};  // spelar sekvensern ljudet?
 

@@ -69,6 +69,10 @@ seq::Settings SlaggProcessor::currentSettings() const
     s.fills = params.fills->load();
     s.phraseBars = phraseBars ((int) params.phrase->load());
     s.barPpq = hostTsNum.load() * 4.0 / juce::jmax (1, hostTsDen.load());
+    // Låtform: live räknas den från DAW:ns markörer (utan markörer: från takt 1, utan slut).
+    s.arrForm = (int) params.arrForm->load();
+    s.arrStart = hostHasLoop.load() ? hostLoopStart.load() : 0.0;
+    s.arrEnd = hostHasLoop.load() ? hostLoopEnd.load() : 0.0;
     for (int v = 0; v < dsp::numVoices; ++v)
     {
         s.length[(size_t) v] = (int) params.voice[(size_t) v].len->load();
@@ -110,7 +114,10 @@ void SlaggProcessor::triggerVoice (int v, float velocity)
 juce::File SlaggProcessor::writeMidiExport (double fromPpq, double toPpq, uint32_t voiceMask, const juce::String& fileName) const
 {
     const auto host = getHostInfo();
-    const auto midi = seq::renderMidiFile (pattern, currentSettings(), fromPpq, toPpq, voiceMask,
+    auto settings = currentSettings();
+    settings.arrStart = fromPpq;   // dragningen: låtformen sträcks över just det dragna området
+    settings.arrEnd = toPpq;
+    const auto midi = seq::renderMidiFile (pattern, settings, fromPpq, toPpq, voiceMask,
                                            host.bpm, host.timeSigNum, host.timeSigDen);
     auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("Slagg");
     dir.createDirectory();

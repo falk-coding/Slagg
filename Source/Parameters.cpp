@@ -56,6 +56,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
     song->addChild (std::make_unique<APF> (id2 (pid::evolve), "Evolve", Range (0.0f, 1.0f), 0.0f, percent()));
     song->addChild (std::make_unique<APF> (id2 (pid::fills), "Fills", Range (0.0f, 1.0f), 0.0f, percent()));
     song->addChild (std::make_unique<APC> (id2 (pid::phrase), "Phrase", phraseNames, 1));
+    song->addChild (std::make_unique<APC> (id2 (pid::arrForm), "Song Form", arrFormNames, 0));
     layout.add (std::move (song));
 
     for (int v = 0; v < dsp::numVoices; ++v)
@@ -97,6 +98,7 @@ void ParamPointers::bind (juce::AudioProcessorValueTreeState& s)
     rumbleAmt = p (pid::rumbleAmt); rumbleDecay = p (pid::rumbleDecay); rumbleTone = p (pid::rumbleTone);
     rumbleDrive = p (pid::rumbleDrive); rumbleDuck = p (pid::rumbleDuck);
     evolve = p (pid::evolve); fills = p (pid::fills); phrase = p (pid::phrase);
+    arrForm = p (pid::arrForm);
     for (int v = 0; v < dsp::numVoices; ++v)
     {
         auto& x = voice[(size_t) v];

@@ -1,5 +1,6 @@
 #include "Pattern.h"
 #include "Parameters.h"
+#include "Arrangement.h"
 #include <algorithm>
 #include <cmath>
 #include <functional>
@@ -287,6 +288,84 @@ void generate (const Pattern& p, const Settings& s, double fromPpq, double toPpq
         }
     }
 
+    // Låtform: vilka ljud som får spela i varje del, virvelrullning i buildup och cymbal på drop.
+    if (s.arrForm > falk::arr::off)
+    {
+        using falk::arr::Part;
+        const auto arrAt = [&s] (double t) { return falk::arr::sectionAt (s.arrForm, t, s.arrStart, s.arrEnd, s.barPpq); };
+        std::vector<Hit> kept;
+        for (size_t k = start; k < out.size(); ++k)
+        {
+            auto h = out[k];
+            const auto sec = arrAt (h.ppq);
+            const int v = h.voice;
+            bool keep = true;
+            float gain = 1.0f;
+            switch (sec.part)
+            {
+                case Part::intro:      // bara kick och stängd hihat
+                    keep = v == dsp::kick || v == dsp::closedHat;
+                    gain = v == dsp::closedHat ? 0.8f : 1.0f;
+                    break;
+                case Part::build:      // ljuden kommer in ett efter ett
+                    keep = v == dsp::kick || v == dsp::closedHat
+                        || ((v == dsp::clap || v == dsp::snare || v == dsp::rim) && sec.progress >= 0.25)
+                        || sec.progress >= 0.5;
+                    gain = (float) (0.75 + 0.25 * sec.progress);
+                    break;
+                case Part::breakdown:  // tomrum: inga trummor
+                case Part::buildup:    // bara rullningen nedan
+                    keep = false;
+                    break;
+                case Part::outro:      // kick och hattar, tonar ut
+                    keep = v == dsp::kick || v == dsp::closedHat || v == dsp::openHat;
+                    gain = (float) (1.0 - 0.6 * sec.progress);
+                    break;
+                case Part::main:
+                case Part::none:
+                default:
+                    break;
+            }
+            if (keep)
+            {
+                h.velocity = std::clamp (h.velocity * gain, 0.05f, 1.0f);
+                kept.push_back (h);
+            }
+        }
+        out.resize (start);
+        out.insert (out.end(), kept.begin(), kept.end());
+
+        // Buildup: virvelrullning som accelererar (1/4 -> 1/8 -> 1/16 -> 1/32) och växer i styrka,
+        // med en kort paus (sista åttondelen) före dropet. Drop: cymbal på första slaget.
+        const double bp = std::max (0.25, s.barPpq);
+        const auto firstBar = (int64_t) std::floor ((fromPpq - s.arrStart) / bp) - 1;
+        const auto lastBar  = (int64_t) std::floor ((toPpq - s.arrStart) / bp) + 1;
+        for (int64_t b = std::max<int64_t> (0, firstBar); b <= lastBar; ++b)
+        {
+            const double barStart = s.arrStart + (double) b * bp;
+            const auto sec = arrAt (barStart);
+            if (sec.part == Part::buildup && (voiceMask & (1u << dsp::snare)) != 0 && s.enabled[(size_t) dsp::snare])
+            {
+                const int fromEnd = sec.partLength - 1 - sec.barInPart;              // 0 = sista takten
+                const int perBeat = fromEnd >= 6 ? 1 : fromEnd >= 4 ? 2 : fromEnd >= 1 ? 4 : 8;
+                const int n = (int) std::round (bp * perBeat);
+                for (int k = 0; k < n; ++k)
+                {
+                    const double t = barStart + (double) k * bp / n;
+                    if (fromEnd == 0 && t >= barStart + bp * 0.875 - 1.0e-9)
+                        break;                                                         // andningspaus före dropet
+                    if (t < fromPpq || t >= toPpq)
+                        continue;
+                    const double prog = ((double) sec.barInPart + (double) k / n) / (double) sec.partLength;
+                    out.push_back ({ t, dsp::snare, (float) std::clamp (0.3 + 0.7 * prog, 0.05, 1.0) });
+                }
+            }
+            if (sec.drop && (voiceMask & (1u << dsp::cymbal)) != 0 && s.enabled[(size_t) dsp::cymbal]
+                && barStart >= fromPpq && barStart < toPpq)
+                out.push_back ({ barStart, dsp::cymbal, 1.0f });
+        }
+    }
+
     std::stable_sort (out.begin() + (long) start, out.end(), [] (const Hit& a, const Hit& b) { return a.ppq < b.ppq; });
 }
 
@@ -307,9 +386,19 @@ juce::MidiFile renderMidiFile (const Pattern& p, const Settings& s, double fromP
     auto sig = juce::MidiMessage::timeSignatureMetaEvent (timeSigNum, timeSigDen);
     sig.setTimeStamp (0);
     conductor.addEvent (sig);
+    // Låtformens delar som markörer (Intro, Build, Break, Buildup, Drop, Outro).
+    if (s.arrForm > falk::arr::off)
+        for (const auto& [ppq, name] : falk::arr::markers (s.arrForm, s.arrStart, s.arrEnd, s.barPpq))
+            if (ppq >= fromPpq && ppq < toPpq)
+            {
+                auto m = juce::MidiMessage::textMetaEvent (6, name);
+                m.setTimeStamp (ticks (ppq));
+                conductor.addEvent (m);
+            }
     auto endC = juce::MidiMessage::endOfTrack();
     endC.setTimeStamp (ticks (toPpq));
     conductor.addEvent (endC);
+    conductor.sort();
     file.addTrack (conductor);
 
     // Dragningen ska alltid ge det man ser – även ljud som sekvensern stängt av efter en tidigare dragning.
@@ -351,6 +440,62 @@ juce::MidiFile renderMidiFile (const Pattern& p, const Settings& s, double fromP
         track.addEvent (endT);
         track.updateMatchedPairs();
         file.addTrack (track);
+    }
+
+    // "Dra alla" med låtform: två extra spår att lägga egna ljud på – Riser (en lång ton genom varje buildup)
+    // och Impact (ett slag på varje drop). Not C3 (60) så att de går att spela på vilket instrument som helst.
+    if (s.arrForm > falk::arr::off && voiceMask == 0xFFFFFFFFu)
+    {
+        using falk::arr::Part;
+        juce::MidiMessageSequence riser, impact;
+        auto nameTrack = [] (juce::MidiMessageSequence& t, const char* n)
+        {
+            auto m = juce::MidiMessage::textMetaEvent (3, n);
+            m.setTimeStamp (0);
+            t.addEvent (m);
+        };
+        nameTrack (riser, "Riser");
+        nameTrack (impact, "Impact");
+        const double bp = std::max (0.25, s.barPpq);
+        double riserStart = -1.0;
+        for (double t = s.arrStart; t < toPpq + bp; t += bp)
+        {
+            const auto sec = falk::arr::sectionAt (s.arrForm, t, s.arrStart, s.arrEnd, bp);
+            if (sec.part == Part::buildup && sec.barInPart == 0)
+                riserStart = t;
+            if (sec.drop || (riserStart >= 0.0 && sec.part != Part::buildup))
+            {
+                if (riserStart >= 0.0)
+                {
+                    const double a = std::max (riserStart, fromPpq), b = std::min (t, toPpq);
+                    if (b > a)
+                    {
+                        auto on = juce::MidiMessage::noteOn (1, 60, 0.85f);  on.setTimeStamp (ticks (a));
+                        auto off = juce::MidiMessage::noteOff (1, 60);       off.setTimeStamp (ticks (b));
+                        riser.addEvent (on);
+                        riser.addEvent (off);
+                    }
+                    riserStart = -1.0;
+                }
+                if (sec.drop && t >= fromPpq && t < toPpq)
+                {
+                    auto on = juce::MidiMessage::noteOn (1, 60, 1.0f);  on.setTimeStamp (ticks (t));
+                    auto off = juce::MidiMessage::noteOff (1, 60);      off.setTimeStamp (ticks (std::min (t + 1.0, toPpq)));
+                    impact.addEvent (on);
+                    impact.addEvent (off);
+                }
+            }
+        }
+        for (auto* tr : { &riser, &impact })
+        {
+            if (tr->getNumEvents() <= 1)
+                continue;
+            auto endT = juce::MidiMessage::endOfTrack();
+            endT.setTimeStamp (ticks (toPpq));
+            tr->addEvent (endT);
+            tr->updateMatchedPairs();
+            file.addTrack (*tr);
+        }
     }
     return file;
 }
