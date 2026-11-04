@@ -486,7 +486,20 @@ juce::MidiFile renderMidiFile (const Pattern& p, const Settings& s, double fromP
                 }
             }
         }
-        for (auto* tr : { &riser, &impact })
+        // Sektioner: en ton i början av varje del (karta över låten, se falk::arr::sectionNote).
+        juce::MidiMessageSequence sections;
+        nameTrack (sections, "Sektioner");
+        for (const auto& [ppq, name] : falk::arr::markers (s.arrForm, s.arrStart, s.arrEnd, bp))
+        {
+            if (ppq < fromPpq || ppq >= toPpq)
+                continue;
+            const int note = falk::arr::sectionNote (name);
+            auto on = juce::MidiMessage::noteOn (1, note, 0.8f);  on.setTimeStamp (ticks (ppq));
+            auto off = juce::MidiMessage::noteOff (1, note);      off.setTimeStamp (ticks (std::min (ppq + 1.0, toPpq)));
+            sections.addEvent (on);
+            sections.addEvent (off);
+        }
+        for (auto* tr : { &riser, &impact, &sections })
         {
             if (tr->getNumEvents() <= 1)
                 continue;

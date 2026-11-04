@@ -106,6 +106,24 @@ inline const char* partName (Part p) noexcept
     }
 }
 
+// "Sektioner"-spåret: en kort ton i början av varje del, en tonhöjd per del (C3 = intro … B3 = outro).
+// Syns som noter i alla DAW:ar (även Reason, som inte läser textmarkörer) – en karta över låten, inget ljud.
+inline int sectionNote (const char* name) noexcept
+{
+    struct Map { const char* n; int note; };
+    static constexpr Map map[] { { "Intro", 48 }, { "Build", 50 }, { "Main", 52 }, { "Break", 53 },
+                                 { "Buildup", 55 }, { "Drop", 57 }, { "Outro", 59 } };
+    for (const auto& m : map)
+    {
+        const char* a = m.n;
+        const char* b = name;
+        while (*a != 0 && *a == *b) { ++a; ++b; }
+        if (*a == 0 && *b == 0)
+            return m.note;
+    }
+    return 60;
+}
+
 // Markörer (början av varje del + "Drop") för MIDI-filen: {ppq, namn}.
 inline std::vector<std::pair<double, const char*>> markers (int form, double startPpq, double endPpq, double barPpq)
 {

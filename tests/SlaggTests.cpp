@@ -632,6 +632,23 @@ void testArrangement()
     for (double x : tracks["Cymbal"]) crashOnDrop = crashOnDrop || std::abs (x - 96.0 * 4.0) < 1e-6;
     check (crashOnDrop, "ingen cymbal på dropet");
     check (countIn ("Riser", 88, 96) == 1 && countIn ("Impact", 96, 97) == 1, "Riser/Impact-spåren saknas eller hamnar fel");
+    // Sektioner-spåret: en ton per del, rätt tonhöjd (break = F3 = 53 på takt 65, drop = A3 = 57 på takt 97).
+    bool breakNote = false, dropNote = false;
+    for (int t = 0; t < mf.getNumTracks(); ++t)
+    {
+        juce::String name;
+        for (const auto* e : *mf.getTrack (t))
+        {
+            if (e->message.isTrackNameEvent()) name = e->message.getTextFromTextMetaEvent();
+            if (name == "Sektioner" && e->message.isNoteOn())
+            {
+                const double x = e->message.getTimeStamp() / tpq;
+                breakNote = breakNote || (std::abs (x - 64.0 * 4.0) < 1e-6 && e->message.getNoteNumber() == 53);
+                dropNote = dropNote || (std::abs (x - 96.0 * 4.0) < 1e-6 && e->message.getNoteNumber() == 57);
+            }
+        }
+    }
+    check (breakNote && dropNote, "Sektioner-spåret saknas eller har fel toner");
     check (markerNames.contains ("Intro") && markerNames.contains ("Break") && markerNames.contains ("Drop")
                && markerNames.contains ("Outro"), "markörerna saknas");
 

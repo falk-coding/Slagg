@@ -31,7 +31,9 @@ Snabbt igång:
   Phrase = frasens längd (4/8/16/32 takter). Börja med ett kit som heter "Song - …".
   Form = låtform för hela dragningen (Classic, Long break, Hypnotic, Short): intro, uppbyggnad, huvuddel,
   break 32 takter utan trummor där en virvelrullning accelererar mot dropet, cymbal på dropet, outro.
-  "Dra alla" får även spåren Riser och Impact (lägg egna ljud på dem) och markörer för delarna.
+  "Dra alla" får även spåren Riser och Impact (lägg egna ljud på dem), markörer och spåret Sektioner:
+  en ton i början av varje del (C intro, D uppbyggnad, E huvuddel, F break, G buildup, A drop, H outro) –
+  en karta över låten som syns även i Reason (som inte läser markörer). Lägg inget ljud på det.
   Bakelit följer samma låtform: samma markörer = break och drop på samma takter.
 - Koppar på Cutoff: alla Cutoff-rattar har kopparfärgad topp (falk elektros signatur).
 - MIDI in: C1 Kick, C#1 Rim, D1 Snare, D#1 Clap, F1 Tom low, F#1 Closed hat, A1 Tom mid,

@@ -47,6 +47,7 @@ Commits: författare `Hans Falk <hans.falk@gmail.com>`. Pusha direkt till main.
 Ändra alltid båda samtidigt – annars hamnar breaks/drops på olika takter. Parametern heter `arrForm` i båda
 (Off/Classic/Long break/Hypnotic/Short). Live räknas formen från DAW:ns markörer, vid dragning från exportområdet.
 Break 32 takter (Short: 16), sista 8 = buildup; första takten efter break = drop. Hans val: 32 takter räcker.
+Spåret "Sektioner" (`sectionNote`): en ton per del, C3 intro … B3 outro – för Reason, som troligen inte läser textmarkörer.
 
 ## Var saker finns
 | Del | Fil |
