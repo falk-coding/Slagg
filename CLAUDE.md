@@ -55,7 +55,17 @@ Commits: författare `Hans Falk <hans.falk@gmail.com>`. Pusha direkt till main.
 | Skin (från Bakelit: plåt, punktljus, rattar, LookAndFeel) | `Source/Skin.*` |
 | Installation | `packaging/mac`, `packaging/windows` |
 
-## Status (2026-11-04, v0.2.0 – etapp 2 + muller + kit)
+## Status (2026-11-04, v0.3.0 – Låt/Song + 10 Song-kit + koppar-Cutoff)
+v0.3: LÅT (Song)-sektion: Evolve (täthetskurva per ljud och fras, kicken känslighet 0), Fills (fill i frasens sista
+taktslag på toms/virvel + cymbal på nästa fras, hattar viker undan), Phrase (4/8/16/32 takter). Allt deterministiskt
+per takt + frö -> 5 min export = uppspelning, och olika i varje takt. Test simulerar 5 min/130 BPM per Song-kit
+(hihat-takter ska variera, kicken i varje takt, fills/cymbaler finns). 10 kit "Song - …" (sist i listan).
+Rate/Swing/Humanize flyttade ned till sekvenseraren (rattraden ovanför rutnätet), Muller + Volume i huvudet.
+Hans krav: får INTE låta statiskt; ska vara enkelt att dra in en hel låt och bara muta.
+**Signatur för Falk Instruments:** alla Cutoff-rattar har topp av sliten koppar (`Skin.cpp`, slider-namn slutar på "cutoff").
+Hans har inte bekräftat än om det ska in i Bakelit också.
+
+### v0.2.0 – etapp 2 + muller + kit
 v0.2: per steg probability/ratchet/nudge (lägesknappar i GUI), humanize, Reroll (slumpen är deterministisk per
 position + frö, så export = uppspelning), Muller (rumble) med Amount/Decay/Tone/Drive/Duck, 13 kit (Init, 3 raka,
 5 groove, 4 rumble). Hans önskemål: probability i procent (inte "var 4:e gång"), levande velocity, några raka och

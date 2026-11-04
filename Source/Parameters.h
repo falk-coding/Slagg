@@ -47,6 +47,10 @@ namespace pid
     inline constexpr const char* rumbleTone  = "rumbleTone";
     inline constexpr const char* rumbleDrive = "rumbleDrive";
     inline constexpr const char* rumbleDuck  = "rumbleDuck";
+    // v0.3 Låt (song): standardvärdena ändrar inget (evolve 0, fills 0).
+    inline constexpr const char* evolve      = "evolve";
+    inline constexpr const char* fills       = "fills";
+    inline constexpr const char* phrase      = "phrase";
 
     // Per ljud (suffix)
     inline constexpr const char* sTune   = "Tune";
@@ -65,6 +69,9 @@ namespace pid
 
     inline juce::String id (int voice, const char* suffix) { return juce::String (voiceInfo[(size_t) voice].prefix) + suffix; }
 }
+
+inline const juce::StringArray phraseNames { "4 bars", "8 bars", "16 bars", "32 bars" };
+inline int phraseBars (int index) { static constexpr int b[] { 4, 8, 16, 32 }; return b[juce::jlimit (0, 3, index)]; }
 
 inline const juce::StringArray rateNames { "1/8", "1/8T", "1/16", "1/16T", "1/32" };
 inline double rateToPpq (int index)
@@ -90,6 +97,7 @@ struct ParamPointers
     std::atomic<float>* humanize {};
     std::atomic<float>* rumbleAmt {}; std::atomic<float>* rumbleDecay {}; std::atomic<float>* rumbleTone {};
     std::atomic<float>* rumbleDrive {}; std::atomic<float>* rumbleDuck {};
+    std::atomic<float>* evolve {}; std::atomic<float>* fills {}; std::atomic<float>* phrase {};
 
     void bind (juce::AudioProcessorValueTreeState& apvts);
     dsp::VoiceParams voiceParams (int v) const;

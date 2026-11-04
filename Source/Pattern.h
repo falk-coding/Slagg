@@ -51,6 +51,11 @@ struct Settings
     double stepPpq = 0.25;
     float swing = 0.0f;                           // 0..1, fördröjer vartannat steg upp till 1/3 steg
     float humanize = 0.0f;                        // 0..1, små variationer i tid och styrka
+    // Låt (song): gör långa exporter levande. Allt beror på takten i låten -> export = uppspelning.
+    float evolve = 0.0f;                          // 0..1, varje ljuds täthet varierar långsamt över låten
+    float fills = 0.0f;                           // 0..1, chans till fill (toms/virvel) i sista takten av en fras
+    int phraseBars = 8;                           // frasens längd i takter
+    double barPpq = 4.0;                          // en takts längd (från taktarten)
     std::array<int, dsp::numVoices> length {};    // 1..32 per ljud
     std::array<bool, dsp::numVoices> enabled {};  // spelar sekvensern ljudet?
 

@@ -3,6 +3,8 @@
 #include "../Source/PluginProcessor.h"
 #include "../Source/PluginEditor.h"
 #include <iostream>
+#include <map>
+#include <set>
 
 using namespace slagg;
 
@@ -498,6 +500,80 @@ void testKits (const juce::File& wavDir)
     check (p->apvts.getRawParameterValue (pid::id (dsp::kick, pid::sOut))->load() > 0.5f, "kit nollställer utgångsvalet");
 }
 
+void testSongs()
+{
+    std::cout << "Song-kit (5 minuter mellan markörerna):" << std::endl;
+    auto p = makeProc();
+    int songs = 0;
+    for (int k = 0; k < p->getNumPrograms(); ++k)
+    {
+        if (! p->getProgramName (k).startsWith ("Song"))
+            continue;
+        ++songs;
+        p->setCurrentProgram (k);
+        const auto name = p->getProgramName (k);
+        // 5 minuter i 130 BPM = 650 taktslag = 162,5 takter.
+        const double end = 650.0;
+        const auto t0 = juce::Time::getMillisecondCounterHiRes();
+        const auto file = p->writeMidiExport (0.0, end, 0xFFFFFFFFu, "test-song.mid");
+        const auto ms = juce::Time::getMillisecondCounterHiRes() - t0;
+        juce::FileInputStream in (file);
+        juce::MidiFile mf;
+        if (! (in.openedOk() && mf.readFrom (in)))
+        {
+            check (false, name + ": exporten kan inte läsas");
+            continue;
+        }
+        const double tpq = mf.getTimeFormat();
+        const int bars = (int) (end / 4.0);
+        std::map<int, std::vector<int>> perBar;          // not -> antal slag per takt
+        std::map<int, std::set<juce::String>> shapes;    // not -> olika "utseenden" av en takt
+        std::map<int, std::vector<juce::String>> barShape;
+        for (int t = 1; t < mf.getNumTracks(); ++t)
+            for (const auto* e : *mf.getTrack (t))
+                if (e->message.isNoteOn())
+                {
+                    const int note = e->message.getNoteNumber();
+                    const double ppq = e->message.getTimeStamp() / tpq;
+                    const int bar = (int) (ppq / 4.0);
+                    if (bar >= bars) continue;
+                    auto& v = perBar[note];
+                    auto& sh = barShape[note];
+                    if (v.empty()) { v.assign ((size_t) bars, 0); sh.assign ((size_t) bars, {}); }
+                    ++v[(size_t) bar];
+                    sh[(size_t) bar] << juce::roundToInt ((ppq - bar * 4.0) * 4.0) << ",";
+                }
+        for (auto& [note, sh] : barShape)
+            for (auto& x : sh) shapes[note].insert (x);
+
+        // Kicken bär låten: fyra slag i varje takt (alla Song-kit har rak kick, utom Night Shuffle som har brutet mönster).
+        const auto& kicks = perBar[36];
+        int emptyKickBars = 0;
+        for (int c : kicks) emptyKickBars += c == 0 ? 1 : 0;
+        check (! kicks.empty() && emptyKickBars == 0, name + ": kicken försvinner i " + juce::String (emptyKickBars) + " takter");
+
+        // Hattarna (stängd 42) ska variera: många olika takter och varierande täthet.
+        int minH = 999, maxH = 0;
+        for (int c : perBar[42]) { minH = std::min (minH, c); maxH = std::max (maxH, c); }
+        const auto distinct = (int) shapes[42].size();
+        check (distinct >= 25, name + ": för statiskt – bara " + juce::String (distinct) + " olika hihat-takter av " + juce::String (bars));
+        check (maxH - minH >= 3, name + ": hihat-tätheten varierar för lite (" + juce::String (minH) + "–" + juce::String (maxH) + ")");
+
+        // Fills och cymbal på nya fraser.
+        int fillHits = 0;
+        for (int n : { 41, 45, 48, 38 })
+            for (size_t b = 0; b < perBar[n].size(); ++b)
+                fillHits += perBar[n][b];
+        const int crashes = [&] { int c = 0; for (int x : perBar[49]) c += x; return c; }();
+        check (fillHits > 0 && crashes > 0, name + ": inga fills/cymbaler");
+        check (ms < 2000.0, name + ": exporten tar för lång tid (" + juce::String (ms, 0) + " ms)");
+
+        std::cout << "  " << name.paddedRight (' ', 24) << " hihat-takter: " << distinct << " olika av " << bars
+                  << ", " << minH << "–" << maxH << " slag/takt, cymbaler " << crashes << ", " << juce::String (ms, 0) << " ms" << std::endl;
+    }
+    check (songs == 10, "väntade 10 Song-kit, hittade " + juce::String (songs));
+}
+
 void testRumble()
 {
     std::cout << "Muller (rumble):" << std::endl;
@@ -574,8 +650,8 @@ void screenshot (const juce::File& file)
     check (out.openedOk() && png.writeImageToStream (img, out), "kunde inte spara skärmdump");
     std::cout << "Skärmdump: " << file.getFullPathName() << " (" << img.getWidth() << "x" << img.getHeight() << ")" << std::endl;
 
-    // Ett groove-kit: probability-prickar, ratchet-streck och nudge syns i rutnätet.
-    p->setCurrentProgram (6);
+    // Ett Song-kit: probability-prickar, ratchet-streck, Låt-sektionen och 32-stegs hattar syns.
+    p->setCurrentProgram (13);
     if (auto* e = dynamic_cast<SlaggEditor*> (ed.get()))
         e->refreshNow();
     const auto img2 = ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f);
@@ -604,6 +680,7 @@ int main (int argc, char** argv)
     testSequencer();
     testGroove();
     testKits (wavDir);
+    testSongs();
     testRumble();
     testState();
     if (shot != juce::File())

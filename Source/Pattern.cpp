@@ -159,6 +159,31 @@ void Pattern::fromTree (const juce::ValueTree& t)
 }
 
 //==============================================================================
+namespace
+{
+    // Hur mycket "Evolve" får gallra varje ljud. Kicken bär låten och rörs aldrig.
+    constexpr float evolveSensitivity[dsp::numVoices] { 0.0f, 0.5f, 0.3f, 0.9f, 0.7f, 0.8f, 0.6f, 0.9f, 0.9f, 0.9f };
+
+    double smoothstep (double x) noexcept { return x * x * (3.0 - 2.0 * x); }
+
+    // Ljudets täthet 0..1 i en given takt: mjuk slumpkurva som byter mål varje fras.
+    double density (uint32_t seed, int voice, int64_t bar, int phrase) noexcept
+    {
+        const int64_t seg = bar >= 0 ? bar / phrase : (bar - phrase + 1) / phrase;
+        const double u = (double) (bar - seg * phrase) / (double) phrase;
+        const double a = hash01 (seed, voice, seg, 0x45564F4Cu);
+        const double b = hash01 (seed, voice, seg + 1, 0x45564F4Cu);
+        return a + (b - a) * smoothstep (u);
+    }
+
+    bool fillInBar (uint32_t seed, int64_t bar, const Settings& s) noexcept
+    {
+        const int phrase = std::max (1, s.phraseBars);
+        const int64_t inPhrase = ((bar % phrase) + phrase) % phrase;
+        return s.fills > 0.0f && inPhrase == phrase - 1 && hash01 (seed, -1, bar, 0x46494C4Cu) < (double) s.fills;
+    }
+}
+
 double stepStart (int64_t n, const Settings& s) noexcept
 {
     const double swing = (n % 2 != 0) ? (double) s.swing * s.stepPpq / 3.0 : 0.0;
@@ -188,7 +213,21 @@ void generate (const Pattern& p, const Settings& s, double fromPpq, double toPpq
             if (! p.on[(size_t) v][i].load())
                 continue;
 
-            const float prob = p.probability[(size_t) v][i].load();
+            float prob = p.probability[(size_t) v][i].load();
+            // Evolve: tätheten följer en långsam kurva per ljud – hattar tunnas ut och byggs upp igen, toms kommer och går.
+            if (s.evolve > 0.0f || s.fills > 0.0f)
+            {
+                const auto bar = (int64_t) std::floor ((double) n * s.stepPpq / s.barPpq + 1.0e-9);
+                if (s.evolve > 0.0f)
+                {
+                    const double d = density (seed, v, bar, std::max (1, s.phraseBars));
+                    prob *= (float) (1.0 - evolveSensitivity[v] * s.evolve * (1.0 - d));
+                }
+                // Under en fill viker hattarna undan.
+                if ((v == dsp::closedHat || v == dsp::openHat) && fillInBar (seed, bar, s)
+                    && (double) n * s.stepPpq - (double) bar * s.barPpq >= 0.75 * s.barPpq - 1.0e-9)
+                    prob *= 0.3f;
+            }
             if (prob < 1.0f && hash01 (seed, v, n, 0x50524F42u) >= (double) prob)
                 continue;
 
@@ -211,6 +250,43 @@ void generate (const Pattern& p, const Settings& s, double fromPpq, double toPpq
             }
         }
     }
+    // Fills: sista taktslaget i frasens sista takt får en fill (toms nedåt + virvel), och nästa fras börjar med cymbal.
+    if (s.fills > 0.0f)
+    {
+        const double barPpq = s.barPpq;
+        const auto firstBar = (int64_t) std::floor (fromPpq / barPpq) - 1;
+        const auto lastBar  = (int64_t) std::floor (toPpq / barPpq) + 1;
+        for (int64_t bar = firstBar; bar <= lastBar; ++bar)
+        {
+            if (! fillInBar (seed, bar, s))
+                continue;
+            const double fillStart = (double) bar * barPpq + 0.75 * barPpq;
+            const int steps = std::max (2, (int) std::round (0.25 * barPpq / s.stepPpq));
+            const int style = (int) (hash01 (seed, -2, bar, 0x5354594Cu) * 3.0);   // tre sorters fills
+            for (int k = 0; k < steps; ++k)
+            {
+                const double t = fillStart + (double) k * s.stepPpq;
+                const double ramp = (double) (k + 1) / (double) steps;
+                int v;
+                if (style == 0)      v = k < steps / 3 ? dsp::tomHigh : (k < 2 * steps / 3 ? dsp::tomMid : dsp::tomLow);
+                else if (style == 1) v = (k % 2 == 0) ? dsp::snare : dsp::tomMid;
+                else                 v = (k == steps - 1) ? dsp::tomLow : dsp::snare;
+                if ((voiceMask & (1u << v)) == 0 || ! s.enabled[(size_t) v])
+                    continue;
+                // Glest i början, tätt mot slutet – en fill ska bygga.
+                if (hash01 (seed, v, (int64_t) (t * 960.0), 0x46494C31u) > 0.35 + 0.65 * ramp)
+                    continue;
+                if (t >= fromPpq && t < toPpq)
+                    out.push_back ({ t, v, (float) (0.45 + 0.55 * ramp) });
+            }
+            // Cymbal på nästa fras första slag.
+            const double crash = (double) (bar + 1) * barPpq;
+            if ((voiceMask & (1u << dsp::cymbal)) != 0 && s.enabled[(size_t) dsp::cymbal]
+                && crash >= fromPpq && crash < toPpq && hash01 (seed, dsp::cymbal, bar, 0x43524153u) < 0.7)
+                out.push_back ({ crash, dsp::cymbal, 0.85f });
+        }
+    }
+
     std::stable_sort (out.begin() + (long) start, out.end(), [] (const Hit& a, const Hit& b) { return a.ppq < b.ppq; });
 }
 

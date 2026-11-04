@@ -408,8 +408,12 @@ void LookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int width, 
     // Kall, sliten ståltopp: koncentriska slipspår + matt reflex uppifrån vänster.
     const float cap = skirt * 0.60f;
     const float tone = 0.75f + wear.nextFloat() * 0.35f;
-    g.setGradientFill (juce::ColourGradient (juce::Colour (0xff6c7276).withMultipliedBrightness (tone), c.x - cap * 0.6f, c.y - cap * 0.8f,
-                                             juce::Colour (0xff121315), c.x + cap * 0.6f, c.y + cap * 0.9f, false));
+    // Falk Instruments signatur: alla Cutoff-rattar har en topp av sliten koppar (samma på alla instrument).
+    const bool copper = slider.getName().endsWithIgnoreCase ("cutoff");
+    const auto capLight = copper ? juce::Colour (0xffb8764a) : juce::Colour (0xff6c7276);
+    const auto capDark  = copper ? juce::Colour (0xff2a140a) : juce::Colour (0xff121315);
+    g.setGradientFill (juce::ColourGradient (capLight.withMultipliedBrightness (tone), c.x - cap * 0.6f, c.y - cap * 0.8f,
+                                             capDark, c.x + cap * 0.6f, c.y + cap * 0.9f, false));
     g.fillEllipse (c.x - cap, c.y - cap, cap * 2.0f, cap * 2.0f);
     for (float rr = cap * 0.12f; rr < cap; rr += 1.2f)
     {

@@ -65,6 +65,10 @@ seq::Settings SlaggProcessor::currentSettings() const
     s.stepPpq = rateToPpq ((int) params.rate->load());
     s.swing = params.swing->load();
     s.humanize = params.humanize->load();
+    s.evolve = params.evolve->load();
+    s.fills = params.fills->load();
+    s.phraseBars = phraseBars ((int) params.phrase->load());
+    s.barPpq = hostTsNum.load() * 4.0 / juce::jmax (1, hostTsDen.load());
     for (int v = 0; v < dsp::numVoices; ++v)
     {
         s.length[(size_t) v] = (int) params.voice[(size_t) v].len->load();

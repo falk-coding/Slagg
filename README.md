@@ -7,7 +7,9 @@
 - Sekvenserare: 32 steg, per steg velocity, probability, ratchet och nudge; egen längd per ljud (polymeter),
   swing, humanize och Reroll (ny slumpvariant – det du drar till DAW:n är alltid det du hörde)
 - **Muller (rumble):** kicken in i mörk efterklang, lågpass, mättning och ducking – drivet i mörk techno
-- 13 kit: raka, groovy (förskjutna hattar, spökslag, polymeter) och rumble
+- **Låt (song):** Evolve (varje ljud andas över minuter), Fills (fills + cymbal vid fraser), Phrase –
+  dra in en hel låt mellan markörerna och muta bara där det passar
+- 23 kit: raka, groovy (förskjutna hattar, spökslag, polymeter), rumble och 10 "Song"-kit för hela låtar
 - **Dra MIDI till DAW** per ljud eller alla (ett spår per ljud), längd från DAW:ns markörer
 - 11 utgångar: Main + en per ljud
 - MIDI in med GM-trumnoter

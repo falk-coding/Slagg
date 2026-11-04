@@ -526,6 +526,17 @@ SeqPanel::SeqPanel (SlaggProcessor& p)
         modeButtons[0].setToggleState (true, juce::dontSendNotification);
     }
 
+    // Groove och Låt (song): rattarna ovanför rutnätet.
+    grooveControls.push_back (std::make_unique<Control> (processor.apvts, pid::rate, "Rate", colours::accent2, true));
+    grooveControls.push_back (std::make_unique<Control> (processor.apvts, pid::swing, "Swing", colours::accent2, false));
+    grooveControls.push_back (std::make_unique<Control> (processor.apvts, pid::humanize, "Humanize", colours::accent2, false));
+    songControls.push_back (std::make_unique<Control> (processor.apvts, pid::evolve, "Evolve", colours::accent2, false));
+    songControls.push_back (std::make_unique<Control> (processor.apvts, pid::fills, "Fills", colours::accent2, false));
+    songControls.push_back (std::make_unique<Control> (processor.apvts, pid::phrase, "Phrase", colours::accent2, true));
+    for (auto* list : { &grooveControls, &songControls })
+        for (auto& c : *list)
+            addAndMakeVisible (*c);
+
     rerollButton.setTooltip (juce::String::fromUTF8 ("Slå om tärningen: ny variant av probability och humanize (new random variation)"));
     rerollButton.onClick = [this] { processor.reroll(); markDirty (processor); grid.repaint(); };
     addAndMakeVisible (rerollButton);
@@ -581,6 +592,21 @@ void SeqPanel::paint (juce::Graphics& g)
 {
     drawSectionFrame (g, getLocalBounds().toFloat().reduced (3.0f), juce::String::fromUTF8 ("SEKVENSERARE|Sequencer"));
 
+    // LÅT (Song): ram och rubrik.
+    if (! songArea.isEmpty())
+    {
+        const auto a = songArea.toFloat();
+        g.setColour (colours::hairline.withAlpha (0.35f));
+        g.drawRoundedRectangle (a.reduced (1.0f), 3.0f, 1.0f);
+        auto t = a.withWidth (100.0f).reduced (10.0f, 8.0f);
+        g.setFont (panelFont (15.0f, false).withExtraKerningFactor (0.2f));
+        g.setColour (colours::text);
+        g.drawText (juce::String::fromUTF8 ("LÅT"), t.removeFromTop (t.getHeight() * 0.5f), juce::Justification::bottomLeft);
+        g.setFont (panelFont (10.0f, false).withExtraKerningFactor (0.15f));
+        g.setColour (colours::dimText);
+        g.drawText ("(SONG)", t, juce::Justification::topLeft);
+    }
+
     // Stegnummer ovanför rutnätet.
     const auto gb = grid.getBounds().toFloat();
     g.setFont (panelFont (10.0f, false));
@@ -599,6 +625,22 @@ void SeqPanel::resized()
 
     auto right = r.removeFromRight (250);
     r.removeFromRight (10);
+
+    // Rattrad: Rate, Swing, Humanize | LÅT: Evolve, Fills, Phrase.
+    {
+        auto row = r.removeFromTop (58);
+        grooveControls[0]->setBounds (row.removeFromLeft (96));
+        for (size_t i = 1; i < grooveControls.size(); ++i)
+            grooveControls[i]->setBounds (row.removeFromLeft (70));
+        row.removeFromLeft (20);
+        songArea = row.removeFromLeft (100 + 70 * 2 + 96).reduced (0, 1);
+        auto sa = songArea;
+        sa.removeFromLeft (100);
+        songControls[0]->setBounds (sa.removeFromLeft (70));
+        songControls[1]->setBounds (sa.removeFromLeft (70));
+        songControls[2]->setBounds (sa);
+    }
+    r.removeFromTop (4);
     r.removeFromTop (14);   // stegnummer
 
     auto left = r.removeFromLeft (210);
@@ -678,9 +720,6 @@ SlaggEditor::SlaggEditor (SlaggProcessor& p) : AudioProcessorEditor (&p), proces
         strips.push_back (std::make_unique<VoiceStrip> (p, v));
         content.addAndMakeVisible (*strips.back());
     }
-    globals.push_back (std::make_unique<Control> (p.apvts, pid::rate, "Rate", colours::accent2, true));
-    globals.push_back (std::make_unique<Control> (p.apvts, pid::swing, "Swing", colours::accent2, false));
-    globals.push_back (std::make_unique<Control> (p.apvts, pid::humanize, "Humanize", colours::accent2, false));
     globals.push_back (std::make_unique<Control> (p.apvts, pid::master, "Volume", colours::accent2, false));
     for (auto& c : globals)
         content.addAndMakeVisible (*c);
@@ -795,9 +834,9 @@ void SlaggEditor::resized()
 
     auto top = juce::Rectangle<int> (earW, 0, innerW, voicesH).reduced (12, 6);
     auto header = top.removeFromTop (56);
-    header.removeFromLeft (300);
+    header.removeFromLeft (400);
     for (auto it = globals.rbegin(); it != globals.rend(); ++it)
-        (*it)->setBounds (header.removeFromRight ((*it == globals.front()) ? 100 : 64));
+        (*it)->setBounds (header.removeFromRight (70));
     header.removeFromRight (24);
     rumbleArea = header.removeFromRight (64 * (int) rumbleControls.size() + 96);
     {

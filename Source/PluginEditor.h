@@ -104,6 +104,8 @@ private:
     juce::ComboBox kitBox;
     juce::TextButton prevKit { "<" }, nextKit { ">" };
     std::array<juce::TextButton, 4> modeButtons;
+    std::vector<std::unique_ptr<Control>> grooveControls, songControls;
+    juce::Rectangle<int> songArea;
     juce::String lastLabel;
     int lastProgram = -1;
     void selectKit (int index);
@@ -122,7 +124,7 @@ public:
     void refreshNow() { timerCallback(); }
 
     static constexpr int earW = 36, innerW = 1120, baseWidth = innerW + 2 * earW;
-    static constexpr int voicesH = 430, seqH = 316, unitGap = 6;
+    static constexpr int voicesH = 430, seqH = 378, unitGap = 6;
     static constexpr int baseHeight = voicesH + unitGap + seqH;
 
 private:

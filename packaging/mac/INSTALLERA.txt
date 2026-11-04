@@ -27,5 +27,10 @@ Snabbt igång:
 - MULLER (RUMBLE): kicken skickas in i en mörk efterklang som lågpassas, mättas och duckas av varje kick.
   Amount = mängd (0 = av), Decay = längd, Tone = hur lågt, Drive = smuts, Duck = hur mycket kicken trycker undan.
   Mullret går till samma utgång som kicken.
+- LÅT (SONG) – för att dra in en hel låt mellan markörerna (t.ex. 5 minuter) och bara muta i DAW:n:
+  Evolve = varje ljud andas långsamt över låten (hattar tunnas ut och byggs upp, toms kommer och går; kicken rörs aldrig).
+  Fills = chans till fill på toms/virvel i frasens sista takt, ofta följt av cymbal på nästa fras.
+  Phrase = frasens längd (4/8/16/32 takter). Börja med ett kit som heter "Song - …".
+- Koppar på Cutoff: alla Cutoff-rattar har kopparfärgad topp (Falk Instruments signatur).
 - MIDI in: C1 Kick, C#1 Rim, D1 Snare, D#1 Clap, F1 Tom low, F#1 Closed hat, A1 Tom mid,
   A#1 Open hat, C2 Tom high, C#2 Cymbal (GM-trumnoter).
