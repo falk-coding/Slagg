@@ -5,12 +5,13 @@
 #include "Pattern.h"
 #include "Kits.h"
 #include "Rumble.h"
+#include "SampleLayer.h"
 
 class SlaggProcessor : public juce::AudioProcessor
 {
 public:
     SlaggProcessor();
-    ~SlaggProcessor() override = default;
+    ~SlaggProcessor() override;
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
     void releaseResources() override {}
@@ -68,9 +69,19 @@ public:
     // Efter dragning: sekvensern slutar spela de ljuden (annars låter det dubbelt när klippet spelar).
     void voicesExported (uint32_t voiceMask);
 
+    // Sample-lager (meddelandetråden). Ladda/ta bort byter atomärt – ljudtråden allokerar eller väntar aldrig.
+    bool loadSample (int voice, const juce::File& file, juce::String& error);
+    void clearSample (int voice);
+    slagg::SamplePtr getSample (int voice) const;
+    // Bumpas när ett sample laddas/tas bort (GUI:t ritar om).
+    std::atomic<int> sampleChangeCounter { 0 };
+    // Frigör utbytta sample när ljudtråden garanterat släppt dem (anropas från GUI-timern och vid byte).
+    void collectGarbage();
+
 private:
     static BusesProperties makeBuses();
     void triggerVoice (int voice, float velocity);
+    void installSample (int voice, slagg::SamplePtr data);
 
     slagg::ParamPointers params;
     std::array<slagg::dsp::DrumVoice, slagg::dsp::numVoices> voices;
@@ -90,6 +101,14 @@ private:
     std::atomic<double> currentPpq { -1.0 };
     std::array<std::atomic<uint32_t>, slagg::dsp::numVoices> hitCounter {};
     std::array<std::atomic<float>, slagg::dsp::numVoices> pendingAudition {};
+
+    // Samples: ägs av meddelandetråden (under sampleLock); ljudtråden läser bara råpekarna.
+    mutable juce::CriticalSection sampleLock;
+    std::array<slagg::SamplePtr, slagg::dsp::numVoices> samples;
+    std::array<std::atomic<const slagg::dsp::SampleBuffer*>, slagg::dsp::numVoices> liveSamples {};
+    struct Retired { slagg::SamplePtr data; uint64_t stamp; };
+    std::vector<Retired> retired;
+    std::atomic<uint64_t> blocksDone { 0 };
 
     std::atomic<bool> hostHasLoop { false };
     std::atomic<double> hostLoopStart { 0 }, hostLoopEnd { 0 }, hostBpm { 120 };

@@ -731,6 +731,310 @@ void testState()
     std::cout << "  " << a->getParameters().size() << " parametrar kontrollerade" << std::endl;
 }
 
+//==============================================================================
+// Sample-lager: testfil = 1 s, första halvan 440 Hz, andra halvan 880 Hz (sinus, 0,8).
+juce::File makeTestSample (const juce::File& dir, double sr)
+{
+    const int n = (int) sr;
+    juce::AudioBuffer<float> b (1, n);
+    double ph = 0;
+    for (int i = 0; i < n; ++i)
+    {
+        ph += (i < n / 2 ? 440.0 : 880.0) / sr;
+        b.setSample (0, i, 0.8f * (float) std::sin (2.0 * juce::MathConstants<double>::pi * ph));
+    }
+    auto f = dir.getChildFile ("Slagg test " + juce::String ((int) sr) + ".wav");
+    f.deleteFile();
+    juce::WavAudioFormat wav;
+    std::unique_ptr<juce::OutputStream> out (f.createOutputStream().release());
+    auto opts = juce::AudioFormatWriterOptions().withSampleRate (sr).withNumChannels (1).withBitsPerSample (24);
+    if (auto w = wav.createWriterFor (out, opts))
+        w->writeFromAudioSampleBuffer (b, 0, n);
+    return f;
+}
+
+// Ett slag (MIDI) och sedan `seconds` sekunder; returnerar main L, eller utgång `bus` L.
+std::vector<float> renderHit (SlaggProcessor& p, int voice, double sr, int block, double seconds, float velocity,
+                              int bus = 0, int chokeVoice = -1, double chokeAt = 0)
+{
+    p.setPlayHead (nullptr);
+    p.setRateAndBufferSizeDetails (sr, block);
+    p.prepareToPlay (sr, block);
+    const int total = (int) (seconds * sr);
+    std::vector<float> out ((size_t) total, 0.0f);
+    juce::AudioBuffer<float> buf (p.getTotalNumOutputChannels(), block);
+    juce::MidiBuffer midi;
+    const int chokeSample = (int) (chokeAt * sr);
+    for (int pos = 0; pos < total; pos += block)
+    {
+        const int n = std::min (block, total - pos);
+        buf.setSize (buf.getNumChannels(), n, false, false, true);
+        midi.clear();
+        if (pos == 0)
+            midi.addEvent (juce::MidiMessage::noteOn (10, voiceInfo[(size_t) voice].midiNote, velocity), 0);
+        if (chokeVoice >= 0 && chokeSample >= pos && chokeSample < pos + n)
+            midi.addEvent (juce::MidiMessage::noteOn (10, voiceInfo[(size_t) chokeVoice].midiNote, 1.0f), chokeSample - pos);
+        p.processBlock (buf, midi);
+        const float* d = buf.getReadPointer (2 * bus);
+        std::copy (d, d + n, out.begin() + pos);
+    }
+    return out;
+}
+
+// Frekvens ur nollgenomgångar i [from, to) sekunder.
+double zeroCrossFreq (const std::vector<float>& x, double sr, double from, double to)
+{
+    int crossings = 0;
+    const int a = (int) (from * sr), b = std::min ((int) x.size(), (int) (to * sr));
+    for (int i = a + 1; i < b; ++i)
+        if ((x[(size_t) i - 1] < 0.0f) != (x[(size_t) i] < 0.0f))
+            ++crossings;
+    return crossings / 2.0 / (to - from);
+}
+
+double rmsOf (const std::vector<float>& x, double sr, double from, double to)
+{
+    double e = 0;
+    const int a = (int) (from * sr), b = std::min ((int) x.size(), (int) (to * sr));
+    for (int i = a; i < b; ++i)
+        e += (double) x[(size_t) i] * x[(size_t) i];
+    return std::sqrt (e / std::max (1, b - a));
+}
+
+float peakOf (const std::vector<float>& x)
+{
+    float m = 0;
+    for (auto v : x) m = std::max (m, std::abs (v));
+    return m;
+}
+
+void testSamples()
+{
+    std::cout << "Sample-lager:" << std::endl;
+    auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("SlaggSampleTest");
+    dir.createDirectory();
+    const auto wav44 = makeTestSample (dir, 44100.0);
+    const auto wav96 = makeTestSample (dir, 96000.0);
+    const int v = dsp::snare;
+
+    // Blend 0 = exakt samma ljud som utan sample.
+    {
+        auto a = makeProc();
+        auto b = makeProc();
+        juce::String err;
+        check (b->loadSample (v, wav44, err), "testsamplet laddas inte: " + err);
+        bool same = true;
+        for (int voice = 0; voice < dsp::numVoices; ++voice)
+        {
+            juce::String e2;
+            b->loadSample (voice, wav44, e2);
+            const auto x = renderHit (*a, voice, 44100.0, 256, 1.0, 0.9f);
+            const auto y = renderHit (*b, voice, 44100.0, 256, 1.0, 0.9f);
+            same = same && x == y;
+        }
+        check (same, "Blend 0 med sample laddat låter inte exakt som utan sample");
+    }
+
+    // Tonhöjd, S.Tune, S.Start, S.Decay, velocity – i 44,1 och 96 kHz, med sample i både 44,1 och 96 kHz.
+    for (const double sr : { 44100.0, 96000.0 })
+        for (const auto& file : { wav44, wav96 })
+        {
+            const juce::String tag = " (" + juce::String (sr / 1000.0, 1) + " kHz, fil " + file.getFileNameWithoutExtension().fromLastOccurrenceOf (" ", false, false) + ")";
+            auto p = makeProc();
+            juce::String err;
+            check (p->loadSample (v, file, err), "sample laddas inte" + tag);
+            setParam (*p, pid::id (v, pid::sBlend), 1.0f);
+            const int block = sr > 50000.0 ? 333 : 256;
+
+            const auto base = renderHit (*p, v, sr, block, 1.2, 1.0f);
+            const double f = zeroCrossFreq (base, sr, 0.05, 0.45);
+            check (std::abs (f - 440.0) < 4.0, "samplet spelar " + juce::String (f, 1) + " Hz, väntat 440" + tag);
+            check (zeroCrossFreq (base, sr, 0.55, 0.95) > 860.0, "andra halvan av samplet hörs inte" + tag);
+
+            setParam (*p, pid::id (v, pid::sSTune), 12.0f);
+            const auto up = renderHit (*p, v, sr, block, 0.5, 1.0f);
+            const double fu = zeroCrossFreq (up, sr, 0.03, 0.23);
+            check (std::abs (fu - 880.0) < 8.0, "S.Tune +12 ger " + juce::String (fu, 1) + " Hz, väntat 880" + tag);
+            setParam (*p, pid::id (v, pid::sSTune), 0.0f);
+
+            setParam (*p, pid::id (v, pid::sSStart), 0.5f);
+            const auto st = renderHit (*p, v, sr, block, 0.5, 1.0f);
+            const double fs = zeroCrossFreq (st, sr, 0.03, 0.4);
+            check (std::abs (fs - 880.0) < 8.0, "S.Start 50 % hoppar inte in (" + juce::String (fs, 1) + " Hz)" + tag);
+            check (rmsOf (st, sr, 0.6, 0.9) < 1.0e-4, "S.Start: samplet spelar för länge" + tag);
+            setParam (*p, pid::id (v, pid::sSStart), 0.0f);
+
+            setParam (*p, pid::id (v, pid::sSDecay), 0.3f);
+            const auto dc = renderHit (*p, v, sr, block, 1.0, 1.0f);
+            check (rmsOf (dc, sr, 0.0, 0.04) > 0.1, "S.Decay 30 %: början saknas" + tag);
+            check (rmsOf (dc, sr, 0.15, 0.9) < 1.0e-4, "S.Decay 30 % kortar inte samplet" + tag);
+            check (rmsOf (base, sr, 0.15, 0.9) > 0.1, "S.Decay 100 % spelar inte hela samplet" + tag);
+            setParam (*p, pid::id (v, pid::sSDecay), 1.0f);
+
+            const float loud = peakOf (renderHit (*p, v, sr, block, 0.2, 1.0f));
+            const float soft = peakOf (renderHit (*p, v, sr, block, 0.2, 0.5f));
+            const float ratio = soft / std::max (1.0e-6f, loud);
+            check (ratio > 0.5f && ratio < 0.8f, "velocity skalar inte samplet (" + juce::String (ratio, 2) + ")" + tag);
+        }
+
+    // Samma kedja som det analoga: Cutoff, egen utgång, choke.
+    {
+        auto p = makeProc();
+        juce::String err;
+        p->loadSample (v, wav44, err);
+        setParam (*p, pid::id (v, pid::sBlend), 1.0f);
+        const auto open = renderHit (*p, v, 44100.0, 256, 0.4, 1.0f);
+        setParam (*p, pid::id (v, pid::sCutoff), 100.0f);
+        const auto closed = renderHit (*p, v, 44100.0, 256, 0.4, 1.0f);
+        check (rmsOf (closed, 44100.0, 0.05, 0.35) < rmsOf (open, 44100.0, 0.05, 0.35) * 0.3, "Cutoff påverkar inte samplet");
+        setParam (*p, pid::id (v, pid::sCutoff), 20000.0f);
+
+        setParam (*p, pid::id (v, pid::sOut), 1.0f);
+        const auto mainOut = renderHit (*p, v, 44100.0, 256, 0.4, 1.0f, 0);
+        const auto ownOut = renderHit (*p, v, 44100.0, 256, 0.4, 1.0f, 1 + v);
+        check (peakOf (mainOut) < 1.0e-6f && peakOf (ownOut) > 0.1f, "samplet följer inte Out = Own");
+
+        // Öppen hihat med långt sample stryps av den stängda.
+        p->loadSample (dsp::openHat, wav44, err);
+        setParam (*p, pid::id (dsp::openHat, pid::sBlend), 1.0f);
+        setParam (*p, pid::id (dsp::openHat, pid::sOut), 1.0f);
+        const auto ringing = renderHit (*p, dsp::openHat, 44100.0, 256, 0.8, 1.0f, 1 + dsp::openHat);
+        const auto choked = renderHit (*p, dsp::openHat, 44100.0, 256, 0.8, 1.0f, 1 + dsp::openHat, dsp::closedHat, 0.2);
+        check (rmsOf (ringing, 44100.0, 0.4, 0.7) > 0.05, "öppen hihat-sample klingar inte");
+        check (rmsOf (choked, 44100.0, 0.4, 0.7) < 1.0e-5, "stängd hihat stryper inte den öppnas sample");
+
+        // Sekvensern spelar samplet (DAW-transport).
+        PlayHead ph;
+        ph.playing = true;
+        p->setPlayHead (&ph);
+        p->prepareToPlay (44100.0, 512);
+        p->getPattern().clear();
+        p->getPattern().setVoiceFromString (v, "x...x...x...x...");
+        juce::AudioBuffer<float> buf (p->getTotalNumOutputChannels(), 512);
+        juce::MidiBuffer midi;
+        float seqPeak = 0;
+        for (int b = 0; b < 40; ++b)
+        {
+            ph.ppq = b * 512 * (ph.bpm / 60.0 / 44100.0);
+            p->processBlock (buf, midi);
+            seqPeak = std::max (seqPeak, buf.getMagnitude (2 * (1 + v), 0, 512));
+        }
+        p->setPlayHead (nullptr);
+        check (seqPeak > 0.1f, "sekvensern spelar inte samplet");
+    }
+
+    // Ta bort: tyst igen, och byte mitt i ett slag kraschar inte.
+    {
+        auto p = makeProc();
+        juce::String err;
+        p->loadSample (v, wav44, err);
+        setParam (*p, pid::id (v, pid::sBlend), 1.0f);
+        p->prepareToPlay (44100.0, 256);
+        juce::AudioBuffer<float> buf (p->getTotalNumOutputChannels(), 256);
+        juce::MidiBuffer midi;
+        midi.addEvent (juce::MidiMessage::noteOn (10, voiceInfo[(size_t) v].midiNote, 1.0f), 0);
+        p->processBlock (buf, midi);
+        midi.clear();
+        p->loadSample (v, wav96, err);   // byts medan det spelar
+        for (int b = 0; b < 20; ++b) p->processBlock (buf, midi);
+        p->clearSample (v);
+        for (int b = 0; b < 4; ++b) p->processBlock (buf, midi);
+        p->collectGarbage();
+        check (p->getSample (v) == nullptr, "samplet tas inte bort");
+        const auto after = renderHit (*p, v, 44100.0, 256, 0.6, 1.0f);
+        check (rmsOf (after, 44100.0, 0.0, 0.6) < 1.0e-6, "Blend 1 utan sample ska vara tyst");
+    }
+
+    // Sparat läge: samplet följer med inbäddat även när filen är borta.
+    {
+        auto tmp = dir.getChildFile ("flyttas bort.wav");
+        wav44.copyFileTo (tmp);
+        auto a = makeProc();
+        juce::String err;
+        a->loadSample (dsp::tomLow, tmp, err);
+        setParam (*a, pid::id (dsp::tomLow, pid::sBlend), 1.0f);
+        juce::MemoryBlock mb;
+        a->getStateInformation (mb);
+        tmp.deleteFile();
+        auto b = makeProc();
+        b->setStateInformation (mb.getData(), (int) mb.getSize());
+        const auto s = b->getSample (dsp::tomLow);
+        check (s != nullptr && s->name == "flyttas bort.wav", "inbäddat sample saknas efter laddning");
+        check (s != nullptr && s->buffer.data.size() == 44100 && std::abs (s->buffer.rate - 44100.0) < 0.5, "inbäddat sample har fel längd/frekvens");
+        check (b->getSample (dsp::kick) == nullptr, "andra ljud fick sample");
+        const auto x = renderHit (*b, dsp::tomLow, 48000.0, 480, 0.5, 1.0f);
+        check (std::abs (zeroCrossFreq (x, 48000.0, 0.05, 0.45) - 440.0) < 4.0, "inbäddat sample spelar fel");
+        std::cout << "  sparat läge med sample: " << juce::String ((int) mb.getSize() / 1024) << " kB" << std::endl;
+
+        // Ladda ett projekt utan sample: samplet försvinner.
+        auto c = makeProc();
+        juce::MemoryBlock empty;
+        c->getStateInformation (empty);
+        b->setStateInformation (empty.getData(), (int) empty.getSize());
+        check (b->getSample (dsp::tomLow) == nullptr, "sample finns kvar efter laddning av projekt utan sample");
+
+        // Kit: Blend nollställs men användarens sample behålls.
+        a->setCurrentProgram (3);
+        check (a->getSample (dsp::tomLow) != nullptr, "kit tar bort användarens sample");
+        check (a->apvts.getRawParameterValue (pid::id (dsp::tomLow, pid::sBlend))->load() < 1.0e-6f, "kit nollställer inte Blend");
+    }
+
+    // Stresstest och pluginval-liknande slumpvärden med sample på alla ljud.
+    {
+        auto p = makeProc();
+        juce::String err;
+        for (int voice = 0; voice < dsp::numVoices; ++voice)
+            p->loadSample (voice, voice % 2 == 0 ? wav44 : wav96, err);
+        juce::Random rnd (7);
+        float worst = 0;
+        bool finite = true;
+        for (int round = 0; round < 30; ++round)
+        {
+            for (auto* prm : p->getParameters())
+                prm->setValueNotifyingHost (rnd.nextFloat());
+            setParam (*p, pid::master, -6.0f);
+            p->prepareToPlay (48000.0, 128);
+            juce::AudioBuffer<float> buf (p->getTotalNumOutputChannels(), 128);
+            juce::MidiBuffer midi;
+            for (int b = 0; b < 200; ++b)
+            {
+                midi.clear();
+                if (b % 5 == 0)
+                    for (const auto& info : voiceInfo)
+                        midi.addEvent (juce::MidiMessage::noteOn (10, info.midiNote, rnd.nextFloat()), rnd.nextInt (128));
+                p->processBlock (buf, midi);
+                for (int ch = 0; ch < buf.getNumChannels(); ++ch)
+                    for (int i = 0; i < 128; ++i)
+                    {
+                        const float x = buf.getSample (ch, i);
+                        finite = finite && std::isfinite (x);
+                        worst = std::max (worst, std::abs (x));
+                    }
+            }
+        }
+        check (finite, "sample-stresstest: NaN/Inf");
+        check (worst <= 1.0f, "sample-stresstest: klipper");
+
+        std::vector<float> saved;
+        for (auto* prm : p->getParameters()) saved.push_back (prm->getValue());
+        juce::MemoryBlock mb;
+        p->getStateInformation (mb);
+        for (auto* prm : p->getParameters()) prm->setValueNotifyingHost (rnd.nextFloat());
+        p->setStateInformation (mb.getData(), (int) mb.getSize());
+        bool restored = true;
+        for (size_t i = 0; i < saved.size(); ++i)
+            restored = restored && std::abs (p->getParameters()[(int) i]->getValue() - saved[i]) < 0.02f;
+        check (restored, "parametrar återställs inte med samples i projektet");
+        int withSample = 0;
+        for (int voice = 0; voice < dsp::numVoices; ++voice)
+            withSample += p->getSample (voice) != nullptr ? 1 : 0;
+        check (withSample == dsp::numVoices, "alla samples kom inte tillbaka");
+        std::cout << "  stresstest med 10 samples ok, topp " << juce::String (worst, 3)
+                  << ", sparat läge " << juce::String ((int) mb.getSize() / 1024) << " kB" << std::endl;
+    }
+    dir.deleteRecursively();
+}
+
 void screenshot (const juce::File& file)
 {
     auto p = makeProc();
@@ -753,6 +1057,52 @@ void screenshot (const juce::File& file)
     file2.deleteFile();
     juce::FileOutputStream out2 (file2);
     check (out2.openedOk() && png.writeImageToStream (img2, out2), "kunde inte spara skärmdump 2");
+
+    // Sample-sidan: tre ljud med sample (vågform, start, uttoning), resten tom dragruta.
+    auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("SlaggShot");
+    dir.createDirectory();
+    const auto wav = makeTestSample (dir, 44100.0);
+    auto kickWav = dir.getChildFile ("Kick 01.wav");
+    {
+        // Ett kickliknande sample (sjunkande ton) så att vågformen ser ut som en trumma.
+        juce::AudioBuffer<float> b (1, 22050);
+        double ph = 0;
+        for (int i = 0; i < 22050; ++i)
+        {
+            const double t = i / 44100.0;
+            ph += (50.0 + 200.0 * std::exp (-t * 30.0)) / 44100.0;
+            b.setSample (0, i, (float) (0.9 * std::exp (-t * 7.0) * std::sin (2.0 * juce::MathConstants<double>::pi * ph)));
+        }
+        juce::WavAudioFormat fmt;
+        std::unique_ptr<juce::OutputStream> o (kickWav.createOutputStream().release());
+        if (auto w = fmt.createWriterFor (o, juce::AudioFormatWriterOptions().withSampleRate (44100.0).withNumChannels (1).withBitsPerSample (24)))
+            w->writeFromAudioSampleBuffer (b, 0, 22050);
+    }
+    juce::String err;
+    p->loadSample (dsp::kick, kickWav, err);
+    p->loadSample (dsp::snare, wav, err);
+    p->loadSample (dsp::clap, wav, err);
+    setParam (*p, pid::id (dsp::kick, pid::sBlend), 0.6f);
+    setParam (*p, pid::id (dsp::snare, pid::sBlend), 1.0f);
+    setParam (*p, pid::id (dsp::snare, pid::sSStart), 0.2f);
+    setParam (*p, pid::id (dsp::snare, pid::sSDecay), 0.6f);
+    if (auto* e = dynamic_cast<SlaggEditor*> (ed.get()))
+    {
+        e->showSamplePages (true);
+        e->refreshNow();
+    }
+    const auto img3 = ed->createComponentSnapshot (ed->getLocalBounds(), true, 1.0f);
+    const auto file3 = file.getSiblingFile (file.getFileNameWithoutExtension() + "-sample.png");
+    file3.deleteFile();
+    juce::FileOutputStream out3 (file3);
+    check (out3.openedOk() && png.writeImageToStream (img3, out3), "kunde inte spara skärmdump 3");
+    // Närbild av ljudremsorna i dubbel storlek (läsbarhet).
+    const auto img4 = ed->createComponentSnapshot (juce::Rectangle<int> (0, 0, ed->getWidth() / 2, 470), true, 2.0f);
+    const auto file4 = file.getSiblingFile (file.getFileNameWithoutExtension() + "-sample-zoom.png");
+    file4.deleteFile();
+    juce::FileOutputStream out4 (file4);
+    check (out4.openedOk() && png.writeImageToStream (img4, out4), "kunde inte spara skärmdump 4");
+    dir.deleteRecursively();
 }
 } // namespace
 
@@ -778,6 +1128,7 @@ int main (int argc, char** argv)
     testArrangement();
     testRumble();
     testState();
+    testSamples();
     if (shot != juce::File())
         screenshot (shot);
 

@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <vector>
 
 // Analoga trummodeller. En röst per ljud, monofon (en trumma slår om sig själv).
 // Allt är skrivet för att låta "analogt": exponentiella kurvor, mättning, lite brus i allt.
@@ -75,6 +76,13 @@ struct Square
     }
 };
 
+// Ett sample i minnet (mono). Byts bara ut av meddelandetråden – ljudtråden läser via pekare.
+struct SampleBuffer
+{
+    std::vector<float> data;
+    double rate = 44100.0;   // samplets egen samplingsfrekvens (resamplas vid uppspelning)
+};
+
 // Parametrar som rösten läser (riktiga enheter, sätts en gång per block).
 struct VoiceParams
 {
@@ -87,6 +95,11 @@ struct VoiceParams
     float reso = 0;        // 0..1
     float level = 0.8f;    // 0..1
     float pan = 0;         // -1..1
+    // v0.5 sample-lager: standard = bara analogt.
+    float blend = 0;       // 0 = analogt, 1 = bara sample
+    float sTune = 0;       // halvtoner -24..24
+    float sStart = 0;      // 0..1 av samplets längd
+    float sDecay = 1;      // 0..1 (1 = hela samplet)
 };
 
 class DrumVoice
@@ -106,9 +119,20 @@ public:
         phase1 = phase2 = 0; filter.reset(); colour.reset(); colour2.reset();
         for (auto& s : squares) s.phase = 0;
         sampleCount = 0;
+        sPlaying = false;
     }
 
-    bool isActive() const noexcept { return amp > 1.0e-5f || noiseEnv > 1.0e-5f; }
+    bool isActive() const noexcept { return amp > 1.0e-5f || noiseEnv > 1.0e-5f || sPlaying; }
+
+    // Sätts i början av varje block (ljudtråden). Nytt sample = det som spelar tystnar.
+    void setSample (const SampleBuffer* s) noexcept
+    {
+        if (s != sample)
+        {
+            sample = s;
+            sPlaying = false;
+        }
+    }
 
     void trigger (float velocity, const VoiceParams& p)
     {
@@ -125,6 +149,20 @@ public:
         phase1 = type == kick || type >= tomLow ? 0.0f : 0.5f + 0.5f * rng.bipolar();
         phase2 = 0.0f;
         setup (p);
+
+        // Sample-lagret startar bara när Blend > 0 – annars är rösten exakt som utan sample.
+        sPlaying = false;
+        if (sample != nullptr && p.blend > 0.0f && sample->data.size() > 4)
+        {
+            const double len = (double) sample->data.size() - 1.0;
+            sPos = std::clamp ((double) p.sStart, 0.0, 1.0) * len;
+            sTravel = 0.0;
+            // S.Decay: hur långt in i resten av samplet som spelas (kvadratiskt = fin kontroll nere).
+            const double d = std::clamp ((double) p.sDecay, 0.0, 1.0);
+            sFull = d >= 0.999;
+            sLength = std::max (0.004 * sample->rate, (len - sPos) * d * d);
+            sPlaying = sPos < len - 1.0;
+        }
     }
 
     // Kort uttoning (öppen hihat stryps av stängd).
@@ -185,6 +223,10 @@ public:
                 break;
         }
         chokeCoef = decayCoef (0.012f, sr);
+        if (p.blend <= 0.0f)
+            sPlaying = false;   // Blend vriden till 0 mitt i ett slag: sample-lagret tystnar direkt
+        if (sample != nullptr)
+            sInc = sample->rate / (double) sr * std::exp2 ((double) std::clamp (p.sTune, -24.0f, 24.0f) / 12.0);
     }
 
     // Ett sampel, mono.
@@ -291,10 +333,14 @@ public:
         if (type != clap && type != snare && type < tomLow)
             noiseEnv = 0.0f;   // bara snare, clap och toms använder brushöljet
 
+        // Sample-lagret blandas in före velocity, choke, drive, filter och nivå (samma kedja som det analoga).
+        if (params.blend > 0.0f)
+            x = x * (1.0f - params.blend) + (sPlaying ? nextSample() : 0.0f) * params.blend;
+
         if (choking)
         {
             chokeGain *= chokeCoef;
-            if (chokeGain < 1.0e-4f) { amp = noiseEnv = 0.0f; choking = false; }
+            if (chokeGain < 1.0e-4f) { amp = noiseEnv = 0.0f; choking = false; sPlaying = false; }
         }
 
         // Drive, filter och nivå.
@@ -311,6 +357,40 @@ public:
     }
 
 private:
+    // Nästa sampel ur samplet: Hermite-interpolation (resampling + S.Tune), S.Decay tonar ut slutet.
+    float nextSample() noexcept
+    {
+        const auto& d = sample->data;
+        const int n = (int) d.size();
+        const int i = (int) sPos;
+        if (n < 4 || i >= n - 1 || sTravel >= sLength)
+        {
+            sPlaying = false;
+            return 0.0f;
+        }
+        const float t = (float) (sPos - (double) i);
+        auto at = [&d, n] (int k) { return d[(size_t) std::clamp (k, 0, n - 1)]; };
+        const float y0 = at (i - 1), y1 = at (i), y2 = at (i + 1), y3 = at (i + 2);
+        const float c1 = 0.5f * (y2 - y0);
+        const float c2 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3;
+        const float c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
+        float y = ((c3 * t + c2) * t + c1) * t + y1;
+
+        if (! sFull)
+        {
+            // Rak start, mjuk uttoning över sista 40 % av den spelade längden.
+            const double u = sTravel / sLength;
+            if (u > 0.6)
+            {
+                const float f = (float) ((1.0 - u) / 0.4);
+                y *= f * f;
+            }
+        }
+        sPos += sInc;
+        sTravel += sInc;
+        return y;
+    }
+
     VoiceType type = kick;
     float sr = 44100.0f;
     VoiceParams params;
@@ -328,5 +408,9 @@ private:
     float baseHz = 50;
     float phase1 = 0, phase2 = 0;
     int64_t sampleCount = 0;
+
+    const SampleBuffer* sample = nullptr;
+    bool sPlaying = false, sFull = true;
+    double sPos = 0, sInc = 1, sTravel = 0, sLength = 0;
 };
 } // namespace slagg::dsp

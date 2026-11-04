@@ -6,7 +6,7 @@ if(APPLE AND NOT CMAKE_OSX_ARCHITECTURES)
 endif()
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minsta macOS-version")
 
-project(Slagg VERSION 0.4.0 LANGUAGES C CXX)
+project(Slagg VERSION 0.5.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -54,7 +54,8 @@ set(SLAGG_SOURCES
     Source/Parameters.cpp
     Source/Pattern.cpp
     Source/Kits.cpp
-    Source/Skin.cpp)
+    Source/Skin.cpp
+    Source/SampleLayer.cpp)
 
 target_sources(Slagg PRIVATE ${SLAGG_SOURCES})
 

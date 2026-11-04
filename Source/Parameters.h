@@ -68,6 +68,11 @@ namespace pid
     inline constexpr const char* sMute   = "Mute";   // Off / On – tystar ljudet helt (även MIDI in)
     inline constexpr const char* sSeq    = "Seq";    // Off / On – sekvensern spelar ljudet (av efter MIDI-dragning)
     inline constexpr const char* sLen    = "Len";    // 1..32 steg (polymeter)
+    // v0.5 sample-lager (standardvärdena ändrar inget: Blend 0 = bara analogt)
+    inline constexpr const char* sBlend  = "Blend";  // 0..1
+    inline constexpr const char* sSTune  = "STune";  // -24..24 halvtoner
+    inline constexpr const char* sSStart = "SStart"; // 0..1
+    inline constexpr const char* sSDecay = "SDecay"; // 0..1 (1 = hela samplet)
 
     inline juce::String id (int voice, const char* suffix) { return juce::String (voiceInfo[(size_t) voice].prefix) + suffix; }
 }
@@ -95,6 +100,7 @@ struct ParamPointers
         std::atomic<float>* drive {}; std::atomic<float>* cutoff {}; std::atomic<float>* reso {}; std::atomic<float>* level {};
         std::atomic<float>* pan {}; std::atomic<float>* out {}; std::atomic<float>* mute {}; std::atomic<float>* seq {};
         std::atomic<float>* len {};
+        std::atomic<float>* blend {}; std::atomic<float>* sTune {}; std::atomic<float>* sStart {}; std::atomic<float>* sDecay {};
     };
     std::array<Voice, dsp::numVoices> voice {};
     std::atomic<float>* rate {}; std::atomic<float>* swing {}; std::atomic<float>* master {};

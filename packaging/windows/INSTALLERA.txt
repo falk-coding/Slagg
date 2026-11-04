@@ -36,5 +36,12 @@ Snabbt igång:
   en karta över låten som syns även i Reason (som inte läser markörer). Lägg inget ljud på det.
   Bakelit följer samma låtform: samma markörer = break och drop på samma takter.
 - Koppar på Cutoff: alla Cutoff-rattar har kopparfärgad topp (falk elektros signatur).
+- SAMPLE-LAGER: dra en WAV, AIFF eller FLAC från Utforskaren direkt på ett ljuds remsa (eller klicka i
+  rutan under fliken Sample). Flikarna Analog/Sample växlar rattar. Blend = blandning (0 = bara analogt,
+  1 = bara sample), S.Tune = samplets tonhöjd, S.Start = startpunkt, S.Decay = längd (100 % = hela samplet).
+  Samplet går genom samma Drive/Cutoff/Reso/Level/Pan/Out som ljudet. Ta bort: × i rutan eller högerklick.
+  Max 10 sekunder per sample (längre kortas), stereo blir mono. Samplet sparas inbäddat i projektet
+  (fungerar på en annan dator). Kit nollställer Blend men behåller dina samples. Liten gul lampa vid
+  rubriken = sample laddat (tänd = hörs).
 - MIDI in: C1 Kick, C#1 Rim, D1 Snare, D#1 Clap, F1 Tom low, F#1 Closed hat, A1 Tom mid,
   A#1 Open hat, C2 Tom high, C#2 Cymbal (GM-trumnoter).

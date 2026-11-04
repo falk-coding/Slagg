@@ -80,6 +80,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout()
         g->addChild (std::make_unique<APC> (id (pid::id (v, pid::sMute)), n + " Mute", offOn, 0));
         g->addChild (std::make_unique<APC> (id (pid::id (v, pid::sSeq)), n + " Sequencer", offOn, 1));
         g->addChild (std::make_unique<API> (id (pid::id (v, pid::sLen)), n + " Steps", 1, 32, 16));
+        // v0.5: sample-lager. Blend 0 = exakt som förut.
+        g->addChild (std::make_unique<APF> (id2 (pid::id (v, pid::sBlend)), n + " Sample Blend", Range (0.0f, 1.0f), 0.0f, percent()));
+        g->addChild (std::make_unique<APF> (id2 (pid::id (v, pid::sSTune)), n + " Sample Tune", Range (-24.0f, 24.0f, 0.01f), 0.0f, unit ("st", 1)));
+        g->addChild (std::make_unique<APF> (id2 (pid::id (v, pid::sSStart)), n + " Sample Start", Range (0.0f, 1.0f), 0.0f, percent()));
+        g->addChild (std::make_unique<APF> (id2 (pid::id (v, pid::sSDecay)), n + " Sample Decay", Range (0.0f, 1.0f), 1.0f, percent()));
         layout.add (std::move (g));
     }
     return layout;
@@ -109,6 +114,8 @@ void ParamPointers::bind (juce::AudioProcessorValueTreeState& s)
         x.pan = p (pid::id (v, pid::sPan));       x.out = p (pid::id (v, pid::sOut));
         x.mute = p (pid::id (v, pid::sMute));     x.seq = p (pid::id (v, pid::sSeq));
         x.len = p (pid::id (v, pid::sLen));
+        x.blend = p (pid::id (v, pid::sBlend));   x.sTune = p (pid::id (v, pid::sSTune));
+        x.sStart = p (pid::id (v, pid::sSStart)); x.sDecay = p (pid::id (v, pid::sSDecay));
     }
 }
 
@@ -119,6 +126,7 @@ dsp::VoiceParams ParamPointers::voiceParams (int v) const
     r.tune = x.tune->load();   r.decay = x.decay->load(); r.tone = x.tone->load(); r.snap = x.snap->load();
     r.drive = x.drive->load(); r.cutoff = x.cutoff->load(); r.reso = x.reso->load();
     r.level = x.level->load(); r.pan = x.pan->load();
+    r.blend = x.blend->load(); r.sTune = x.sTune->load(); r.sStart = x.sStart->load(); r.sDecay = x.sDecay->load();
     return r;
 }
 } // namespace slagg

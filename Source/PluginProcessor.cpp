@@ -25,6 +25,12 @@ SlaggProcessor::SlaggProcessor()
     hits.reserve (512);
 }
 
+SlaggProcessor::~SlaggProcessor()
+{
+    for (auto& l : liveSamples)
+        l.store (nullptr);
+}
+
 void SlaggProcessor::prepareToPlay (double sr, int)
 {
     sampleRate = sr;
@@ -161,6 +167,55 @@ void SlaggProcessor::voicesExported (uint32_t voiceMask)
 }
 
 //==============================================================================
+void SlaggProcessor::installSample (int v, SamplePtr data)
+{
+    if (! juce::isPositiveAndBelow (v, dsp::numVoices))
+        return;
+    {
+        const juce::ScopedLock sl (sampleLock);
+        auto old = std::move (samples[(size_t) v]);
+        samples[(size_t) v] = std::move (data);
+        liveSamples[(size_t) v].store (samples[(size_t) v] != nullptr ? &samples[(size_t) v]->buffer : nullptr,
+                                      std::memory_order_release);
+        // Det gamla kan fortfarande läsas av ett pågående block – frigörs först när två block till är klara.
+        if (old != nullptr)
+            retired.push_back ({ std::move (old), blocksDone.load() });
+    }
+    ++sampleChangeCounter;
+    collectGarbage();
+}
+
+void SlaggProcessor::collectGarbage()
+{
+    const juce::ScopedLock sl (sampleLock);
+    const auto done = blocksDone.load();
+    retired.erase (std::remove_if (retired.begin(), retired.end(), [done] (const Retired& r) { return done >= r.stamp + 2; }),
+                   retired.end());
+}
+
+bool SlaggProcessor::loadSample (int v, const juce::File& file, juce::String& error)
+{
+    auto s = loadSampleFile (file, error);
+    if (s == nullptr)
+        return false;
+    installSample (v, std::move (s));
+    updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
+    return true;
+}
+
+void SlaggProcessor::clearSample (int v)
+{
+    installSample (v, nullptr);
+    updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
+}
+
+SamplePtr SlaggProcessor::getSample (int v) const
+{
+    const juce::ScopedLock sl (sampleLock);
+    return juce::isPositiveAndBelow (v, dsp::numVoices) ? samples[(size_t) v] : nullptr;
+}
+
+//==============================================================================
 void SlaggProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
     juce::ScopedNoDenormals noDenormals;
@@ -246,6 +301,7 @@ void SlaggProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
     for (int v = 0; v < dsp::numVoices; ++v)
     {
         vp[(size_t) v] = params.voiceParams (v);
+        voices[(size_t) v].setSample (liveSamples[(size_t) v].load (std::memory_order_acquire));
         voices[(size_t) v].setup (vp[(size_t) v]);
 
         // Egen utgång om ljudet ställts på "Own" och värden har den aktiv, annars Main.
@@ -316,6 +372,7 @@ void SlaggProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
         for (int i = 0; i < numSamples; ++i)
             d[i] = std::tanh (d[i]) * 0.98f;   // aldrig över 0,98
     }
+    blocksDone.fetch_add (1, std::memory_order_release);
 }
 
 juce::AudioProcessorEditor* SlaggProcessor::createEditor()
@@ -330,6 +387,16 @@ void SlaggProcessor::getStateInformation (juce::MemoryBlock& destData)
     state.setProperty ("program", currentProgram, nullptr);
     state.removeChild (state.getChildWithName ("Pattern"), nullptr);
     state.appendChild (pattern.toTree(), nullptr);
+    // Sample-lagren: sökväg + inbäddad ljuddata (projektet fungerar på en annan dator).
+    state.removeChild (state.getChildWithName ("Samples"), nullptr);
+    {
+        juce::ValueTree st ("Samples");
+        const juce::ScopedLock sl (sampleLock);
+        for (int v = 0; v < dsp::numVoices; ++v)
+            if (samples[(size_t) v] != nullptr)
+                st.appendChild (sampleToTree (*samples[(size_t) v], v), nullptr);
+        state.appendChild (st, nullptr);
+    }
     if (auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
 }
@@ -345,6 +412,19 @@ void SlaggProcessor::setStateInformation (const void* data, int sizeInBytes)
             if (pt.isValid())
                 pattern.fromTree (pt);
             tree.removeChild (pt, nullptr);
+            // Samples: saknas noden (äldre projekt) = inga samples.
+            const auto st = tree.getChildWithName ("Samples");
+            std::array<SamplePtr, dsp::numVoices> loaded {};
+            for (const auto& c : st)
+            {
+                const int v = c.getProperty ("voice", -1);
+                if (juce::isPositiveAndBelow (v, dsp::numVoices))
+                    loaded[(size_t) v] = sampleFromTree (c);
+            }
+            tree.removeChild (st, nullptr);
+            for (int v = 0; v < dsp::numVoices; ++v)
+                if (loaded[(size_t) v] != getSample (v))
+                    installSample (v, loaded[(size_t) v]);
             currentProgram = juce::jlimit (0, getNumPrograms() - 1, (int) tree.getProperty ("program", 0));
             apvts.replaceState (tree);
             ++programChangeCounter;

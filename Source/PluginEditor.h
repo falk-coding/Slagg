@@ -9,7 +9,8 @@ namespace slagg::ui
 struct ExportRange { double from = 0, to = 16; juce::String label, barsText; };
 
 // En ljudremsa: rubrik (klick = provlyssna), lampa som blinkar vid slag, rattar i två kolumner.
-class VoiceStrip : public juce::Component, public juce::SettableTooltipClient
+// Flikarna Analog/Sample växlar mellan den analoga motorns rattar och sample-lagret (dra in en ljudfil).
+class VoiceStrip : public juce::Component, public juce::SettableTooltipClient, public juce::FileDragAndDropTarget
 {
 public:
     VoiceStrip (SlaggProcessor& p, int voiceIndex);
@@ -18,10 +19,31 @@ public:
     void mouseDown (const juce::MouseEvent&) override;
     void refresh();
 
+    bool isInterestedInFileDrag (const juce::StringArray& files) override;
+    void fileDragEnter (const juce::StringArray&, int, int) override { dragOver = true; repaint(); }
+    void fileDragExit (const juce::StringArray&) override { dragOver = false; repaint(); }
+    void filesDropped (const juce::StringArray& files, int, int) override;
+
+    void showSamplePage (bool sample);
+    bool isSamplePageShown() const noexcept { return samplePage; }
+
 private:
+    void loadFile (const juce::File&);
+    void browse();
+    void showMenu();
+    void drawSampleBox (juce::Graphics&, juce::Rectangle<float>);
+    float param (const char* suffix) const;
+
     SlaggProcessor& processor;
     const int voice;
-    std::vector<std::unique_ptr<Control>> controls;
+    std::vector<std::unique_ptr<Control>> controls, sampleControls, sharedControls;
+    juce::TextButton analogTab { "Analog" }, sampleTab { "Sample" };
+    bool samplePage = false, dragOver = false;
+    juce::Rectangle<int> sampleBox, removeBox;
+    int lastSampleChange = -1;
+    float lastStart = -1.0f, lastDecay = -1.0f, lastBlend = -1.0f;
+    slagg::SamplePtr shownSample;
+    std::unique_ptr<juce::FileChooser> chooser;
     uint32_t lastHits = 0;
     float flash = 0.0f;
 };
@@ -122,9 +144,10 @@ public:
     void paintOverChildren (juce::Graphics&) override;
     void resized() override;
     void refreshNow() { timerCallback(); }
+    void showSamplePages (bool sample) { for (auto& s : strips) s->showSamplePage (sample); }
 
     static constexpr int earW = 36, innerW = 1120, baseWidth = innerW + 2 * earW;
-    static constexpr int voicesH = 430, seqH = 378, unitGap = 6;
+    static constexpr int voicesH = 452, seqH = 378, unitGap = 6;
     static constexpr int baseHeight = voicesH + unitGap + seqH;
 
 private:

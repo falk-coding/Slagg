@@ -27,22 +27,63 @@ namespace
 VoiceStrip::VoiceStrip (SlaggProcessor& p, int v) : processor (p), voice (v)
 {
     const auto& info = voiceInfo[(size_t) v];
-    auto add = [this] (const char* suffix, const juce::String& label, bool choice = false)
+    auto add = [this] (std::vector<std::unique_ptr<Control>>& list, const char* suffix, const juce::String& label, bool choice = false)
     {
-        controls.push_back (std::make_unique<Control> (processor.apvts, pid::id (voice, suffix), label, colours::accent2, choice));
-        addAndMakeVisible (*controls.back());
+        list.push_back (std::make_unique<Control> (processor.apvts, pid::id (voice, suffix), label, colours::accent2, choice));
+        addAndMakeVisible (*list.back());
     };
-    add (pid::sTune, "Tune");
-    add (pid::sDecay, "Decay");
-    add (pid::sTone, info.toneLabel);
-    add (pid::sSnap, info.snapLabel);
-    add (pid::sDrive, "Drive");
-    add (pid::sLevel, "Level");
-    add (pid::sCutoff, "Cutoff");
-    add (pid::sReso, "Reso");
-    add (pid::sPan, "Pan");
-    add (pid::sOut, "Out", true);
-    setTooltip (juce::String::fromUTF8 ("Klicka på rubriken för att provlyssna (click the title to audition)"));
+    add (controls, pid::sTune, "Tune");
+    add (controls, pid::sDecay, "Decay");
+    add (controls, pid::sTone, info.toneLabel);
+    add (controls, pid::sSnap, info.snapLabel);
+    add (controls, pid::sDrive, "Drive");
+    add (controls, pid::sLevel, "Level");
+    add (controls, pid::sCutoff, "Cutoff");
+    add (controls, pid::sReso, "Reso");
+    add (controls, pid::sPan, "Pan");
+    add (controls, pid::sOut, "Out", true);
+
+    // Sample-sidan: Blend, S.Tune, S.Start, S.Decay + Level och Out (samma parametrar som på den analoga sidan).
+    add (sampleControls, pid::sBlend, "Blend");
+    add (sampleControls, pid::sSTune, "S.Tune");
+    add (sampleControls, pid::sSStart, "S.Start");
+    add (sampleControls, pid::sSDecay, "S.Decay");
+    add (sharedControls, pid::sLevel, "Level");
+    add (sharedControls, pid::sOut, "Out", true);
+
+    for (auto* b : { &analogTab, &sampleTab })
+    {
+        b->setClickingTogglesState (true);
+        b->setRadioGroupId (1000 + v);
+        addAndMakeVisible (*b);
+    }
+    analogTab.setTooltip (juce::String::fromUTF8 ("Den analoga motorns rattar (analog engine)"));
+    sampleTab.setTooltip (juce::String::fromUTF8 ("Sample-lagret: dra in en WAV/AIFF/FLAC på remsan (sample layer – drop a file)"));
+    analogTab.onClick = [this] { if (analogTab.getToggleState()) showSamplePage (false); };
+    sampleTab.onClick = [this] { if (sampleTab.getToggleState()) showSamplePage (true); };
+    showSamplePage (false);
+}
+
+float VoiceStrip::param (const char* suffix) const
+{
+    return processor.apvts.getRawParameterValue (pid::id (voice, suffix))->load();
+}
+
+void VoiceStrip::showSamplePage (bool sample)
+{
+    samplePage = sample;
+    analogTab.setToggleState (! sample, juce::dontSendNotification);
+    sampleTab.setToggleState (sample, juce::dontSendNotification);
+    for (auto& c : controls) c->setVisible (! sample);
+    for (auto& c : sampleControls) c->setVisible (sample);
+    for (auto& c : sharedControls) c->setVisible (sample);
+    setTooltip (sample
+        ? juce::String::fromUTF8 ("Dra in en WAV/AIFF/FLAC här, eller klicka i rutan. Högerklick: ladda/ta bort. "
+                                  "Blend 0 = bara analogt, 1 = bara sample. (Drop a sample here; right-click to load/remove.)")
+        : juce::String::fromUTF8 ("Klicka på rubriken för att provlyssna. Dra in en ljudfil för sample-lager. "
+                                  "(Click the title to audition; drop a sample to layer it.)"));
+    resized();
+    repaint();
 }
 
 void VoiceStrip::paint (juce::Graphics& g)
@@ -56,6 +97,13 @@ void VoiceStrip::paint (juce::Graphics& g)
     auto head = r.removeFromTop (34.0f).reduced (6.0f, 2.0f);
     const auto lamp = head.removeFromRight (12.0f).withSizeKeepingCentre (10.0f, 10.0f);
     drawLamp (g, lamp, colours::lampRed, colours::lampRedOff, flash > 0.05f, 0.4f + 0.6f * flash);
+    // Bärnstenslampa till vänster om slaglampan: sample laddat (tänd = hörs, Blend > 0).
+    if (shownSample != nullptr)
+    {
+        const auto sl = lamp.translated (-14.0f, 0.0f).withSizeKeepingCentre (7.0f, 7.0f);
+        drawLamp (g, sl, colours::lampAmber, colours::lampAmberOff, lastBlend > 0.0f, 1.0f);
+        head.removeFromRight (14.0f);
+    }
 
     const auto sv = swedishName (voice);
     const auto en = juce::String::fromUTF8 (info.titleUtf8).fromFirstOccurrenceOf ("|", false, false).toUpperCase();
@@ -68,26 +116,204 @@ void VoiceStrip::paint (juce::Graphics& g)
     g.setFont (panelFont (9.5f, false).withExtraKerningFactor (0.14f));
     g.setColour (colours::dimText);
     g.drawText ("(" + en + ")", head, juce::Justification::topLeft);
+
+
+    if (samplePage)
+        drawSampleBox (g, sampleBox.toFloat());
+
+    if (dragOver)
+    {
+        g.setColour (colours::lampAmber.withAlpha (0.12f));
+        g.fillRect (getLocalBounds().reduced (2));
+        g.setColour (colours::lampAmber.withAlpha (0.8f));
+        g.drawRect (getLocalBounds().reduced (2), 2);
+    }
+}
+
+void VoiceStrip::drawSampleBox (juce::Graphics& g, juce::Rectangle<float> box)
+{
+    g.setColour (juce::Colours::black.withAlpha (0.3f));
+    g.fillRect (box);
+    drawEngravedBox (g, box, 0.8f);
+    auto r = box.reduced (4.0f, 3.0f);
+
+    if (shownSample == nullptr)
+    {
+        juce::Path border;
+        border.addRectangle (r.reduced (1.0f));
+        const float dashes[] { 5.0f, 3.0f };
+        juce::Path dashed;
+        juce::PathStrokeType (1.0f).createDashedStroke (dashed, border, dashes, 2);
+        g.setColour (colours::text.withAlpha (0.35f));
+        g.fillPath (dashed);
+        auto t = r.reduced (4.0f);
+        g.setColour (colours::text.withAlpha (0.9f));
+        g.setFont (panelFont (12.0f, false).withExtraKerningFactor (0.06f));
+        g.drawFittedText (juce::String::fromUTF8 ("Dra hit WAV,\nAIFF, FLAC"), t.removeFromTop (t.getHeight() * 0.62f).toNearestInt(),
+                          juce::Justification::centredBottom, 2);
+        g.setColour (colours::dimText);
+        g.setFont (panelFont (10.0f, false).withExtraKerningFactor (0.1f));
+        g.drawFittedText ("(DROP SAMPLE)", t.toNearestInt(), juce::Justification::centredTop, 1);
+        return;
+    }
+
+    // Namn (och ×) överst.
+    auto nameRow = r.removeFromTop (14.0f);
+    g.setColour (colours::text.withAlpha (0.8f));
+    g.setFont (panelFont (14.0f, false));
+    g.drawText (juce::String::fromUTF8 ("×"), removeBox.toFloat(), juce::Justification::centred);
+    nameRow.removeFromRight (14.0f);
+    g.setColour (colours::text);
+    g.setFont (panelFont (11.0f, false));
+    g.drawText (shownSample->name, nameRow, juce::Justification::centredLeft, true);
+    r.removeFromTop (2.0f);
+
+    // Vågform (min/max per pixel), start och S.Decay-uttoning.
+    const auto& d = shownSample->buffer.data;
+    const int n = (int) d.size();
+    const float mid = r.getCentreY(), half = r.getHeight() * 0.48f;
+    const int w = juce::jmax (1, (int) r.getWidth());
+    const float start = juce::jlimit (0.0f, 1.0f, lastStart);
+    const float dec = juce::jlimit (0.0f, 1.0f, lastDecay);
+    const float endFrac = dec >= 0.999f ? 1.0f : start + (1.0f - start) * dec * dec;
+    g.setColour (colours::hairline.withAlpha (0.25f));
+    g.drawHorizontalLine ((int) mid, r.getX(), r.getRight());
+    for (int x = 0; x < w; ++x)
+    {
+        const int a = (int) ((juce::int64) x * n / w), b = juce::jmax (a + 1, (int) ((juce::int64) (x + 1) * n / w));
+        float lo = 0.0f, hi = 0.0f;
+        for (int i = a; i < b && i < n; ++i)
+        {
+            lo = juce::jmin (lo, d[(size_t) i]);
+            hi = juce::jmax (hi, d[(size_t) i]);
+        }
+        const float f = (float) x / (float) w;
+        float alpha = (f < start || f > endFrac) ? 0.25f : 0.9f;
+        if (f >= start && f <= endFrac && dec < 0.999f)
+        {
+            const float u = (f - start) / juce::jmax (1.0e-4f, endFrac - start);
+            if (u > 0.6f) alpha = 0.25f + 0.65f * juce::square ((1.0f - u) / 0.4f);
+        }
+        g.setColour (colours::lampAmber.withAlpha (alpha));
+        g.drawVerticalLine ((int) r.getX() + x, mid - hi * half, mid - lo * half + 1.0f);
+    }
+    g.setColour (colours::text.withAlpha (0.9f));
+    const float sx = r.getX() + start * r.getWidth();
+    g.drawLine (sx, r.getY(), sx, r.getBottom(), 1.2f);
 }
 
 void VoiceStrip::resized()
 {
     auto r = getLocalBounds().reduced (6, 4);
     r.removeFromTop (34);
+    auto tabs = r.removeFromTop (20);
+    analogTab.setBounds (tabs.removeFromLeft (tabs.getWidth() / 2).reduced (1, 0));
+    sampleTab.setBounds (tabs.reduced (1, 0));
+    r.removeFromTop (4);
+
     const int rowsN = 5;
     const int rowH = r.getHeight() / rowsN;
-    for (int i = 0; i < (int) controls.size(); ++i)
+    const int w = r.getWidth() / 2;
+    auto place = [&] (std::vector<std::unique_ptr<Control>>& list, int firstRow)
     {
-        const int row = i / 2, col = i % 2;
-        const int w = r.getWidth() / 2;
-        controls[(size_t) i]->setBounds (r.getX() + col * w, r.getY() + row * rowH, w, rowH);
-    }
+        for (int i = 0; i < (int) list.size(); ++i)
+            list[(size_t) i]->setBounds (r.getX() + (i % 2) * w, r.getY() + (firstRow + i / 2) * rowH, w, rowH);
+    };
+    place (controls, 0);
+    // Sample-sidan: ruta för samplet (två rader), sample-rattarna, Level/Out.
+    sampleBox = juce::Rectangle<int> (r.getX(), r.getY() + 2, r.getWidth(), 2 * rowH - 6);
+    removeBox = juce::Rectangle<int> (sampleBox.getRight() - 18, sampleBox.getY() + 2, 16, 16);
+    place (sampleControls, 2);
+    place (sharedControls, 4);
 }
 
 void VoiceStrip::mouseDown (const juce::MouseEvent& e)
 {
+    if (e.mods.isPopupMenu())
+    {
+        showMenu();
+        return;
+    }
     if (e.y < 38)
+    {
         processor.audition (voice);
+        return;
+    }
+    if (samplePage && shownSample != nullptr && removeBox.expanded (2).contains (e.getPosition()))
+        processor.clearSample (voice);
+    else if (samplePage && sampleBox.contains (e.getPosition()))
+        browse();
+}
+
+void VoiceStrip::showMenu()
+{
+    juce::PopupMenu m;
+    m.addItem (1, juce::String::fromUTF8 ("Ladda sample… (load sample)"));
+    m.addItem (2, juce::String::fromUTF8 ("Ta bort sample (remove sample)"), shownSample != nullptr);
+    m.addSeparator();
+    m.addItem (3, juce::String::fromUTF8 ("Visa analogt (analog page)"), true, ! samplePage);
+    m.addItem (4, juce::String::fromUTF8 ("Visa sample (sample page)"), true, samplePage);
+    juce::Component::SafePointer<VoiceStrip> safe (this);
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this), [safe] (int r)
+    {
+        if (safe == nullptr) return;
+        if (r == 1) safe->browse();
+        if (r == 2) safe->processor.clearSample (safe->voice);
+        if (r == 3) safe->showSamplePage (false);
+        if (r == 4) safe->showSamplePage (true);
+    });
+}
+
+void VoiceStrip::browse()
+{
+    chooser = std::make_unique<juce::FileChooser> (juce::String::fromUTF8 ("Välj sample (choose sample) – ") + voiceInfo[(size_t) voice].shortName,
+                                                   juce::File(), supportedSampleWildcard());
+    juce::Component::SafePointer<VoiceStrip> safe (this);
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                          [safe] (const juce::FileChooser& fc)
+                          {
+                              if (safe != nullptr && fc.getResult().existsAsFile())
+                                  safe->loadFile (fc.getResult());
+                          });
+}
+
+bool VoiceStrip::isInterestedInFileDrag (const juce::StringArray& files)
+{
+    for (const auto& f : files)
+        if (isSupportedSampleFile (f))
+            return true;
+    return false;
+}
+
+void VoiceStrip::filesDropped (const juce::StringArray& files, int, int)
+{
+    dragOver = false;
+    for (const auto& f : files)
+        if (isSupportedSampleFile (f))
+        {
+            loadFile (juce::File (f));
+            break;
+        }
+    repaint();
+}
+
+void VoiceStrip::loadFile (const juce::File& file)
+{
+    juce::String error;
+    if (! processor.loadSample (voice, file, error))
+    {
+        juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Slagg",
+                                                file.getFileName() + ": " + error);
+        return;
+    }
+    // Ett nytt sample ska höras direkt: Blend 0 -> 50 % (lager ovanpå det analoga).
+    if (param (pid::sBlend) <= 0.0f)
+        if (auto* prm = processor.apvts.getParameter (pid::id (voice, pid::sBlend)))
+            prm->setValueNotifyingHost (0.5f);
+    if (auto s = processor.getSample (voice); s != nullptr && s->truncated)
+        juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, "Slagg",
+            juce::String::fromUTF8 ("Samplet kortades till 10 sekunder (sample truncated to 10 s)."));
+    showSamplePage (true);
 }
 
 void VoiceStrip::refresh()
@@ -104,6 +330,24 @@ void VoiceStrip::refresh()
         flash = flash < 0.06f ? 0.0f : flash * 0.7f;
         repaint (getLocalBounds().removeFromTop (40));
     }
+
+    const int change = processor.sampleChangeCounter.load();
+    const float st = param (pid::sSStart), dc = param (pid::sSDecay), bl = param (pid::sBlend);
+    if (change != lastSampleChange)
+    {
+        lastSampleChange = change;
+        shownSample = processor.getSample (voice);
+        repaint();
+    }
+    if (! juce::exactlyEqual (st, lastStart) || ! juce::exactlyEqual (dc, lastDecay))
+    {
+        lastStart = st;
+        lastDecay = dc;
+        if (samplePage) repaint (sampleBox);
+    }
+    if ((bl > 0.0f) != (lastBlend > 0.0f) || lastBlend < 0.0f)
+        repaint (getLocalBounds().removeFromTop (40));
+    lastBlend = bl;
 }
 
 //==============================================================================
@@ -852,6 +1096,7 @@ void SlaggEditor::resized()
 
 void SlaggEditor::timerCallback()
 {
+    processor.collectGarbage();
     for (auto& s : strips)
         s->refresh();
     seqPanel.refresh();

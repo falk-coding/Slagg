@@ -52,17 +52,32 @@ Spåret "Sektioner" (`sectionNote`): en ton per del, C3 intro … B3 outro – f
 ## Var saker finns
 | Del | Fil |
 |---|---|
-| Ljudmodellerna (kick, snare, clap, rim, 3 metall, 3 toms), filter, choke | `Source/Voices.h` |
+| Ljudmodellerna (kick, snare, clap, rim, 3 metall, 3 toms), filter, choke, sample-uppspelning (Hermite, S.Decay) | `Source/Voices.h` |
+| Sample-lager: läsa WAV/AIFF/FLAC (mono, max 10 s), inbäddning (FLAC 24 bit base64 + sökväg) | `Source/SampleLayer.*` |
 | Muller (rumble): FDN-efterklang → lågpass → mättning → ducking från kicken | `Source/Rumble.h` |
 | Fabrikskit (ljud + mönster, textformat för steg) – nya läggs sist | `Source/Kits.*` |
 | Parametrar, ljudlista (namn, GM-not, etiketter, standardvärden) | `Source/Parameters.*` |
 | Mönster (velocity, probability, ratchet, nudge, frö), generering i PPQ, MIDI-fil (typ 1, ett spår per ljud) | `Source/Pattern.*` |
-| Ljudtråd, utgångar (Main + 10), transport, MIDI in, export | `Source/PluginProcessor.*` |
-| GUI: ljudremsor, rutnät, dragrutor | `Source/PluginEditor.*` |
+| Ljudtråd, utgångar (Main + 10), transport, MIDI in, export, sample-byte (atomär pekare + retired-lista) | `Source/PluginProcessor.*` |
+| GUI: ljudremsor (flikar Analog/Sample, dropp av ljudfil, vågform), rutnät, dragrutor | `Source/PluginEditor.*` |
 | Skin (från Bakelit: plåt, punktljus, rattar, LookAndFeel) | `Source/Skin.*` |
 | Installation | `packaging/mac`, `packaging/windows` |
 
-## Status (2026-11-04, v0.4.0 – låtform)
+## Status (2026-11-04, v0.5.0 – sample-lager)
+v0.5: sample-lager per ljud. Dra in WAV/AIFF/FLAC på en remsa (eller klicka i rutan / högerklick -> ladda).
+Parametrar per ljud: `Blend` (0 = exakt analogt, standard), `STune` (±24 st), `SStart`, `SDecay` (1 = hela).
+Samplet blandas in före velocity/choke/Drive/Cutoff/Reso/Level/Pan/Out – samma kedja som det analoga.
+Startar bara om Blend > 0 vid slaget (annars påverkas inte brusgeneratorn -> Blend 0 = bitexakt som förut).
+Trådar: laddning i meddelandetråden, ljudtråden läser en atomär råpekare per ljud; gamla sample frigörs
+först när två block till är klara (`collectGarbage`, från GUI-timern och vid byte). Resampling vid uppspelning
+(Hermite, kvot filens frekvens / värdens) -> låter lika i 44.1/48/96 kHz.
+Sparat läge: noden `Samples` (namn, sökväg, frekvens, FLAC 24 bit base64); reserv = sökvägen. Saknas noden = inga samples.
+Gräns 10 s per sample, mono-mix. Släpp av fil med Blend 0 sätter Blend 50 %. Kit: Blend -> 0, samples behålls
+(Hans kan ändra: alternativ är att kit tömmer samples). GUI: flikar Analog/Sample per remsa, ljudenheten 452 px hög.
+Test: frekvens/S.Tune/S.Start/S.Decay/velocity i 44.1+96 kHz med 44.1+96 kHz-filer, Blend 0 bitexakt, Cutoff/Out/choke/
+sekvenserare, byte mitt i slag, spara -> radera filen -> ladda, kit, stresstest med 10 samples.
+
+### v0.4.0 – låtform
 v0.4: Form (låtform) i Låt-sektionen. Trummor: intro = kick + stängd hihat, uppbyggnad = ljuden kommer in ett efter
 ett, break = inga trummor, buildup = virvelrullning 1/4 -> 1/32 med paus sista åttondelen, drop = cymbal, outro = kick + hattar
 som tonar ut. "Dra alla" får extraspåren Riser (en ton genom varje buildup) och Impact (ett slag per drop) + markörer.
@@ -93,6 +108,6 @@ choke, skin. **Inget är provlyssnat av Hans än.**
 
 **Etapper kvar:**
 3. Parameter-lås per steg, villkor (1:2, fill …), mönster A/B + Fill, kedjning.
-4. Sample-lager per ljud (dra in WAV, Blend/Tune/Start/Decay), egna kit (spara/ladda), manual sv/en.
+4. ~~Sample-lager per ljud~~ (v0.5), egna kit (spara/ladda), manual sv/en.
 Viktigt att Hans testar i Reason: hur dragning med flera spår beter sig (Reason: ett spår styr en enhet → notbanor),
 och hur utgångarna dyker upp på baksidan.
