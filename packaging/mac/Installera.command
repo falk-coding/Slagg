@@ -1,5 +1,5 @@
 #!/bin/bash
-# Installerar Slagg (Falk Instruments) – VST3 + AU – för den inloggade användaren och tar bort
+# Installerar Slagg (falk elektro) – VST3 + AU – för den inloggade användaren och tar bort
 # macOS-karantänen så att DAW:en kan ladda pluginet. Ingen admin-behörighet behövs.
 set -e
 cd "$(dirname "$0")"
@@ -20,6 +20,6 @@ echo "Klart!"
 echo "  VST3: $VST3_DIR/Slagg.vst3"
 echo "  AU:   $AU_DIR/Slagg.component"
 echo ""
-echo "Starta om din DAW. Slagg finns under Instruments → Falk Instruments → Slagg."
+echo "Starta om din DAW. Slagg finns under Instruments → falk elektro → Slagg."
 echo ""
 read -n 1 -s -r -p "Tryck på valfri tangent för att stänga."

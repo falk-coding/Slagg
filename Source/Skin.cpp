@@ -120,6 +120,35 @@ void drawSectionFrame (juce::Graphics& g, juce::Rectangle<float> r, const juce::
     }
 }
 
+float drawBrandHeader (juce::Graphics& g, juce::Rectangle<float> area, const juce::String& product)
+{
+    // falk elektro-loggan (provisorisk tills varumärkeskitet finns): gemener, lugn, ljus – längst upp till vänster.
+    const auto brandFont = panelFont (21.0f, false).withExtraKerningFactor (0.06f);
+    const juce::String brand ("falk elektro");
+    const float bw = juce::GlyphArrangement::getStringWidth (brandFont, brand);
+    g.setFont (brandFont);
+    g.setColour (juce::Colours::black.withAlpha (0.6f));
+    g.drawText (brand, area.translated (0.0f, 1.0f), juce::Justification::centredLeft);
+    g.setColour (colours::text.withAlpha (0.92f));
+    g.drawText (brand, area, juce::Justification::centredLeft);
+
+    // Tunn graverad skiljelinje, sedan produktnamnet präglat i plåten.
+    const float sx = area.getX() + bw + 16.0f;
+    g.setColour (colours::hairline.withAlpha (0.4f));
+    g.drawLine (sx, area.getY() + 10.0f, sx, area.getBottom() - 10.0f, 1.0f);
+
+    auto p = area.withTrimmedLeft (bw + 32.0f);
+    const auto title = panelFont (28.0f).withExtraKerningFactor (0.24f);
+    g.setFont (title);
+    g.setColour (juce::Colours::black.withAlpha (0.7f));
+    g.drawText (product, p.translated (-0.8f, -0.8f), juce::Justification::centredLeft);
+    g.setColour (juce::Colours::white.withAlpha (0.07f));
+    g.drawText (product, p.translated (0.8f, 0.9f), juce::Justification::centredLeft);
+    g.setColour (colours::metal.brighter (0.6f));
+    g.drawText (product, p, juce::Justification::centredLeft);
+    return bw + 32.0f + juce::GlyphArrangement::getStringWidth (title, product);
+}
+
 void drawRackEar (juce::Graphics& g, juce::Rectangle<float> r)
 {
     // Böjd plåt: lite ljusare än panelen, mörk fog mot panelen.
@@ -408,7 +437,7 @@ void LookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int width, 
     // Kall, sliten ståltopp: koncentriska slipspår + matt reflex uppifrån vänster.
     const float cap = skirt * 0.60f;
     const float tone = 0.75f + wear.nextFloat() * 0.35f;
-    // Falk Instruments signatur: alla Cutoff-rattar har en topp av sliten koppar (samma på alla instrument).
+    // falk elektros signatur: alla Cutoff-rattar har en topp av sliten koppar (samma på alla instrument).
     const bool copper = slider.getName().endsWithIgnoreCase ("cutoff");
     const auto capLight = copper ? juce::Colour (0xffb8764a) : juce::Colour (0xff6c7276);
     const auto capDark  = copper ? juce::Colour (0xff2a140a) : juce::Colour (0xff121315);

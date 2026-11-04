@@ -31,8 +31,8 @@ endif()
 juce_add_plugin(Slagg
     # Tillverkar- och pluginkoden (Falk/Slgg) får ALDRIG ändras efter första release:
     # DAW:ar känner igen pluginet på dem, så sparade projekt fortsätter fungera.
-    COMPANY_NAME "Falk Instruments"
-    COMPANY_WEBSITE "https://falkinstruments.com"
+    COMPANY_NAME "falk elektro"
+    # BUNDLE_ID är osynligt och behålls från tiden som Falk Instruments (byte kan ge dubbla AU-plugins).
     BUNDLE_ID "com.falkinstruments.slagg"
     PLUGIN_MANUFACTURER_CODE Falk
     PLUGIN_CODE Slgg

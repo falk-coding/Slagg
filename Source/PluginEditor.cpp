@@ -732,6 +732,8 @@ SlaggEditor::SlaggEditor (SlaggProcessor& p) : AudioProcessorEditor (&p), proces
     for (auto& c : rumbleControls)
         content.addAndMakeVisible (*c);
     content.addAndMakeVisible (seqPanel);
+    brandHotspot.setTooltip ("falk elektro  ·  Slagg v" SLAGG_VERSION);
+    content.addAndMakeVisible (brandHotspot);
     addAndMakeVisible (content);
     content.setInterceptsMouseClicks (false, true);
 
@@ -773,17 +775,13 @@ void SlaggEditor::paint (juce::Graphics& g)
     unit (0, voicesH);
     unit (voicesH + unitGap, seqH);
 
-    // Logga: präglad i plåten.
-    auto header = juce::Rectangle<float> ((float) earW + 20.0f, 8.0f, 500.0f, 44.0f);
-    const auto title = panelFont (30.0f).withExtraKerningFactor (0.3f);
-    g.setFont (title);
-    g.setColour (juce::Colours::black.withAlpha (0.7f));
-    g.drawText ("SLAGG", header.translated (-0.8f, -0.8f), juce::Justification::centredLeft);
-    g.setColour (juce::Colours::white.withAlpha (0.07f));
-    g.drawText ("SLAGG", header.translated (0.8f, 0.9f), juce::Justification::centredLeft);
-    g.setColour (colours::metal.brighter (0.6f));
-    g.drawText ("SLAGG", header, juce::Justification::centredLeft);
-    const float w = juce::GlyphArrangement::getStringWidth (title, "SLAGG");
+    // falk elektro längst upp till vänster, sedan produktnamnet. Versionen står undangömt nere i hörnet
+    // (och i loggans tooltip).
+    drawBrandHeader (g, juce::Rectangle<float> ((float) earW + 20.0f, 8.0f, 500.0f, 44.0f), "SLAGG");
+    g.setFont (panelFont (9.0f, false));
+    g.setColour (colours::dimText.withAlpha (0.35f));
+    g.drawText ("v" SLAGG_VERSION, juce::Rectangle<float> ((float) (earW + innerW) - 70.0f, (float) (voicesH + unitGap + seqH) - 14.0f, 60.0f, 12.0f),
+                juce::Justification::centredRight);
 
     // Muller-rubriken med en tunn ram runt rattarna.
     if (! rumbleArea.isEmpty())
@@ -799,10 +797,6 @@ void SlaggEditor::paint (juce::Graphics& g)
         g.setColour (colours::dimText);
         g.drawText ("(RUMBLE)", t, juce::Justification::topLeft);
     }
-    g.setFont (panelFont (11.5f, false).withExtraKerningFactor (0.2f));
-    g.setColour (colours::dimText.withAlpha (0.8f));
-    g.drawText (juce::String::fromUTF8 ("FALK INSTRUMENTS  ·  v" SLAGG_VERSION), header.withTrimmedLeft (w + 14.0f).translated (0.0f, 4.0f),
-                juce::Justification::centredLeft);
 }
 
 void SlaggEditor::paintOverChildren (juce::Graphics& g)
@@ -832,6 +826,7 @@ void SlaggEditor::resized()
     content.setBounds (0, 0, baseWidth, baseHeight);
     content.setTransform (juce::AffineTransform::scale (scale));
 
+    brandHotspot.setBounds (earW + 20, 8, 300, 44);
     auto top = juce::Rectangle<int> (earW, 0, innerW, voicesH).reduced (12, 6);
     auto header = top.removeFromTop (56);
     header.removeFromLeft (400);

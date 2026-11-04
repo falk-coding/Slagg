@@ -44,6 +44,8 @@ void drawLamp (juce::Graphics&, juce::Rectangle<float> r, juce::Colour lit, juce
 // Sektionsrubrik: kyrilliska + latin, med graverad linje.
 // note = kort text längst till höger i rubriken (t.ex. röster i bruk).
 void drawSectionFrame (juce::Graphics&, juce::Rectangle<float> r, const juce::String& title, const juce::String& note = {});
+// Varumärkesloggan "falk elektro" längst upp till vänster och produktnamnet efter. Returnerar använd bredd.
+float drawBrandHeader (juce::Graphics&, juce::Rectangle<float> area, const juce::String& product);
 // Rackfäste (19") med ovala hål och skruvar.
 void drawRackEar (juce::Graphics&, juce::Rectangle<float> r);
 // Grynig, repig plåttextur (genereras en gång).

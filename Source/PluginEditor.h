@@ -133,6 +133,7 @@ private:
     SlaggProcessor& processor;
     slagg::ui::LookAndFeel lnf;
     juce::TooltipWindow tooltipWindow { this, 700 };
+    juce::Label brandHotspot;   // osynlig yta över loggan: tooltip med versionen
     juce::Component content;
     std::vector<std::unique_ptr<slagg::ui::VoiceStrip>> strips;
     std::vector<std::unique_ptr<slagg::ui::Control>> globals, rumbleControls;

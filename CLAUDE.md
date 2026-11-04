@@ -1,7 +1,7 @@
-# Slagg (Falk Instruments) – arbetsanteckningar för Claude
+# Slagg (falk elektro) – arbetsanteckningar för Claude
 
 Analog-inspirerad trummaskin för mörk techno som VST3 (Mac + Windows) och AU (Mac), byggd med JUCE 8.0.10.
-Produkt: **Slagg**, varumärke: **Falk Instruments** (Hans enskilda firma ijoli). Syskon till synten **Bakelit**
+Produkt: **Slagg**, varumärke: **falk elektro** – alltid gemener (hette Falk Instruments till nov 2026; Hans tar fram ett varumärkeskit) (Hans enskilda firma ijoli). Syskon till synten **Bakelit**
 (repo falk-coding/Bakelit) – skin, byggflöde och sekvenserarprinciper kommer därifrån.
 Repo: github.com/falk-coding/Slagg. GitHub-verktygen: `owner: falk-coding`, `repo: slagg`.
 
@@ -62,8 +62,10 @@ per takt + frö -> 5 min export = uppspelning, och olika i varje takt. Test simu
 (hihat-takter ska variera, kicken i varje takt, fills/cymbaler finns). 10 kit "Song - …" (sist i listan).
 Rate/Swing/Humanize flyttade ned till sekvenseraren (rattraden ovanför rutnätet), Muller + Volume i huvudet.
 Hans krav: får INTE låta statiskt; ska vara enkelt att dra in en hel låt och bara muta.
-**Signatur för Falk Instruments:** alla Cutoff-rattar har topp av sliten koppar (`Skin.cpp`, slider-namn slutar på "cutoff").
-Hans har inte bekräftat än om det ska in i Bakelit också.
+**Signatur för falk elektro:** alla Cutoff-rattar har topp av sliten koppar (`Skin.cpp`, slider-namn slutar på "cutoff").
+Hans har godkänt den – finns även i Bakelit (v1.9).
+Huvudet: loggan "falk elektro" längst upp till vänster, sedan produktnamnet (`drawBrandHeader` i Skin.cpp, samma som Bakelit);
+versionen bara i loggans tooltip och svagt nere till höger. Loggan är provisorisk tills varumärkeskitet finns.
 
 ### v0.2.0 – etapp 2 + muller + kit
 v0.2: per steg probability/ratchet/nudge (lägesknappar i GUI), humanize, Reroll (slumpen är deterministisk per

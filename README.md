@@ -1,6 +1,6 @@
 # Slagg
 
-**Falk Instruments** – analog-inspirerad trummaskin för mörk techno. VST3 (Mac + Windows) och AU (Mac).
+**falk elektro** – analog-inspirerad trummaskin för mörk techno. VST3 (Mac + Windows) och AU (Mac).
 
 - 10 analoga ljud: Kick, Snare, Clap, Rim, Closed hat, Open hat, Cymbal, Tom low/mid/high
 - Per ljud: Tune, Decay, Tone/Sweep, Snap/Click/Noise, Drive, Cutoff, Reso, Level, Pan, egen utgång
